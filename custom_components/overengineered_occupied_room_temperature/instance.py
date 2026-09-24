@@ -1,4 +1,4 @@
-"""Per-instance runtime: gathers inputs from Home Assistant and runs the engine."""
+"""Per-zone runtime: gathers inputs from Home Assistant and runs the engine."""
 
 from __future__ import annotations
 
@@ -33,11 +33,13 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_ACTIVE_TEMPLATE,
-    CONF_AREA_ID,
+    CONF_DEFAULTS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
     CONF_OVERRIDES,
+    CONF_PEOPLE,
+    CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
     CONF_STALE_LIMIT,
@@ -54,8 +56,6 @@ from .const import (
     CONF_W_PERSON,
     DOMAIN,
     GRACE_PERIOD_SECONDS,
-    SUBENTRY_PERSON,
-    SUBENTRY_ROOM,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
 )
@@ -130,30 +130,29 @@ class InstanceRuntime:
         self.hass = hass
         self.entry = entry
         areas = ar.async_get(hass)
+        options = entry.options
+        defaults = options[CONF_DEFAULTS]
         self.rooms: dict[str, Room] = {}
-        self.people: list[Person] = []
-        for subentry in entry.subentries.values():
-            data = subentry.data
-            if subentry.subentry_type == SUBENTRY_ROOM:
-                area = areas.async_get_area(data[CONF_AREA_ID])
-                self.rooms[data[CONF_AREA_ID]] = Room(
-                    area_id=data[CONF_AREA_ID],
-                    name=area.name if area else subentry.title,
-                    temperature_sensor=data[CONF_TEMPERATURE_SENSOR],
-                    occupancy_sensors=list(data.get(CONF_OCCUPANCY_SENSORS, [])),
-                    occupancy_template=self._template(data.get(CONF_OCCUPANCY_TEMPLATE)),
-                    active_template=self._template(data.get(CONF_ACTIVE_TEMPLATE)),
-                    config=_room_config(entry.data, data.get(CONF_OVERRIDES, {})),
-                )
-            elif subentry.subentry_type == SUBENTRY_PERSON:
-                self.people.append(
-                    Person(
-                        name=data[CONF_NAME],
-                        source_entity=data[CONF_SOURCE_ENTITY],
-                        source_attribute=data.get(CONF_SOURCE_ATTRIBUTE),
-                        by_area_id=data[CONF_VALUE_TYPE] == VALUE_TYPE_AREA_ID,
-                    )
-                )
+        for area_id, data in options[CONF_ROOMS].items():
+            area = areas.async_get_area(area_id)
+            self.rooms[area_id] = Room(
+                area_id=area_id,
+                name=area.name if area else area_id,
+                temperature_sensor=data[CONF_TEMPERATURE_SENSOR],
+                occupancy_sensors=list(data.get(CONF_OCCUPANCY_SENSORS, [])),
+                occupancy_template=self._template(data.get(CONF_OCCUPANCY_TEMPLATE)),
+                active_template=self._template(data.get(CONF_ACTIVE_TEMPLATE)),
+                config=_room_config(defaults, data.get(CONF_OVERRIDES, {})),
+            )
+        self.people: list[Person] = [
+            Person(
+                name=data[CONF_NAME],
+                source_entity=data[CONF_SOURCE_ENTITY],
+                source_attribute=data.get(CONF_SOURCE_ATTRIBUTE),
+                by_area_id=data[CONF_VALUE_TYPE] == VALUE_TYPE_AREA_ID,
+            )
+            for data in options[CONF_PEOPLE].values()
+        ]
         self.epsilon = (
             fallback_epsilon(room.config.weights.base for room in self.rooms.values())
             if self.rooms
@@ -256,7 +255,7 @@ class InstanceRuntime:
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="no_occupancy_source",
-                translation_placeholders={"instance": self.entry.title, "rooms": ", ".join(rooms)},
+                translation_placeholders={"zone": self.entry.title, "rooms": ", ".join(rooms)},
             )
         else:
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)

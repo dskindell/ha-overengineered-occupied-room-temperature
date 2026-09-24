@@ -125,6 +125,7 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         state, inputs = self._room.state, self._room.inputs
         return {
+            "area_id": self._room.area_id,
             "status": state.status.value,
             "active": inputs.active if inputs else None,
             "temperature_available": inputs.temperature is not None if inputs else None,

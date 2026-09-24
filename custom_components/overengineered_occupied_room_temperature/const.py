@@ -4,12 +4,21 @@ from typing import Final
 
 DOMAIN: Final = "overengineered_occupied_room_temperature"
 
-SUBENTRY_ROOM: Final = "room"
-SUBENTRY_PERSON: Final = "person"
-
-# Instance settings (config entry data).
+# Zone (config entry): `data` holds the name; `options` hold the defaults, rooms
+# and people, all edited through the zone's menu.
 CONF_NAME: Final = "name"
 CONF_DEFAULTS: Final = "defaults"
+CONF_ROOMS: Final = "rooms"  # {area_id: room data}
+CONF_PEOPLE: Final = "people"  # {person_id: person data}
+
+# Flow-only fields.
+CONF_ROOM: Final = "room"
+CONF_PERSON: Final = "person"
+CONF_REMOVE: Final = "remove"
+CHOICE_ADD: Final = "__add__"
+CHOICE_DONE: Final = "__done__"
+
+# Zone defaults (options[CONF_DEFAULTS]).
 CONF_TAU_PERSON_RISE: Final = "tau_person_rise"
 CONF_TAU_PERSON_FALL: Final = "tau_person_fall"
 CONF_TAU_OCCUPANCY_RISE: Final = "tau_occupancy_rise"
@@ -21,7 +30,7 @@ CONF_W_OCCUPIED: Final = "w_occupied"
 CONF_W_BASE: Final = "w_base"
 CONF_STALE_LIMIT: Final = "stale_limit"
 
-# Room subentry data.
+# Room data (options[CONF_ROOMS][area_id]).
 CONF_AREA_ID: Final = "area_id"
 CONF_TEMPERATURE_SENSOR: Final = "temperature_sensor"
 CONF_OCCUPANCY_SENSORS: Final = "occupancy_sensors"
@@ -29,7 +38,7 @@ CONF_OCCUPANCY_TEMPLATE: Final = "occupancy_template"
 CONF_ACTIVE_TEMPLATE: Final = "active_template"
 CONF_OVERRIDES: Final = "overrides"
 
-# Person subentry data.
+# Person data (options[CONF_PEOPLE][person_id]).
 CONF_SOURCE_ENTITY: Final = "source_entity"
 CONF_SOURCE_ATTRIBUTE: Final = "source_attribute"
 CONF_VALUE_TYPE: Final = "value_type"

@@ -14,7 +14,6 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
-from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, UnitOfTemperature
 from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import area_registry as ar, entity_registry as er, issue_registry as ir
@@ -22,18 +21,19 @@ from homeassistant.helpers import area_registry as ar, entity_registry as er, is
 from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_ACTIVE_TEMPLATE,
     CONF_AREA_ID,
+    CONF_DEFAULTS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
     CONF_OVERRIDES,
+    CONF_PEOPLE,
+    CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
     CONF_TEMPERATURE_SENSOR,
     CONF_VALUE_TYPE,
     DEFAULTS,
     DOMAIN,
-    SUBENTRY_PERSON,
-    SUBENTRY_ROOM,
 )
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
@@ -43,27 +43,33 @@ OFFICE_WEIGHT = "sensor.oort_home_office_weight"
 TEMPERATURE = "sensor.oort_home_temperature"
 
 
-def room(area_id: str, **fields: Any) -> ConfigSubentryData:
-    return ConfigSubentryData(
-        data={
+def room(area_id: str, **fields: Any) -> tuple[str, str, dict[str, Any]]:
+    return (
+        "room",
+        area_id,
+        {
             CONF_AREA_ID: area_id,
             CONF_TEMPERATURE_SENSOR: f"sensor.{area_id}_temperature",
             CONF_OVERRIDES: {},
             **fields,
         },
-        subentry_type=SUBENTRY_ROOM,
-        title=area_id.title(),
-        unique_id=area_id,
     )
 
 
-def person(name: str, source: str, **fields: Any) -> ConfigSubentryData:
-    return ConfigSubentryData(
-        data={CONF_NAME: name, CONF_SOURCE_ENTITY: source, CONF_VALUE_TYPE: "area_name", **fields},
-        subentry_type=SUBENTRY_PERSON,
-        title=name,
-        unique_id=None,
+def person(name: str, source: str, **fields: Any) -> tuple[str, str, dict[str, Any]]:
+    return (
+        "person",
+        name.lower(),
+        {CONF_NAME: name, CONF_SOURCE_ENTITY: source, CONF_VALUE_TYPE: "area_name", **fields},
     )
+
+
+def zone_options(items: list[tuple[str, str, dict[str, Any]]], **settings: float) -> dict[str, Any]:
+    return {
+        CONF_DEFAULTS: {**DEFAULTS, **settings},
+        CONF_ROOMS: {key: data for kind, key, data in items if kind == "room"},
+        CONF_PEOPLE: {key: data for kind, key, data in items if kind == "person"},
+    }
 
 
 def set_temperature(hass: HomeAssistant, area_id: str, value: str, unit: str = "°C") -> None:
@@ -75,7 +81,7 @@ def set_temperature(hass: HomeAssistant, area_id: str, value: str, unit: str = "
 
 
 async def setup_instance(
-    hass: HomeAssistant, subentries: list[ConfigSubentryData], **settings: float
+    hass: HomeAssistant, items: list[tuple[str, str, dict[str, Any]]], **settings: float
 ) -> MockConfigEntry:
     areas = ar.async_get(hass)
     for area in ("kitchen", "office"):
@@ -84,8 +90,9 @@ async def setup_instance(
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Home",
-        data={CONF_NAME: "Home", **DEFAULTS, **settings},
-        subentries_data=subentries,
+        version=1,
+        data={CONF_NAME: "Home"},
+        options=zone_options(items, **settings),
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -286,7 +293,7 @@ async def test_repairs_issue_when_no_occupancy_source(hass: HomeAssistant) -> No
     entry = await setup_instance(hass, [room("kitchen")])
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"no_occupancy_source_{entry.entry_id}")
     assert issue is not None
-    assert issue.translation_placeholders == {"instance": "Home", "rooms": "Kitchen"}
+    assert issue.translation_placeholders == {"zone": "Home", "rooms": "Kitchen"}
 
 
 async def test_no_repairs_issue_when_people_exist(hass: HomeAssistant) -> None:
@@ -304,12 +311,8 @@ async def test_removing_a_room_removes_its_entity(hass: HomeAssistant) -> None:
     registry = er.async_get(hass)
     assert registry.async_get(OFFICE_WEIGHT) is not None
 
-    office_id = next(
-        subentry_id
-        for subentry_id, subentry in entry.subentries.items()
-        if subentry.unique_id == "office"
-    )
-    hass.config_entries.async_remove_subentry(entry, office_id)
+    options = {**entry.options, CONF_ROOMS: {"kitchen": entry.options[CONF_ROOMS]["kitchen"]}}
+    hass.config_entries.async_update_entry(entry, options=options)
     await hass.async_block_till_done()
     assert registry.async_get(OFFICE_WEIGHT) is None
     assert registry.async_get(KITCHEN_WEIGHT) is not None
@@ -334,6 +337,7 @@ async def test_weights_restored_after_restart(hass: HomeAssistant) -> None:
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert float(kitchen.state) == pytest.approx(0.8)  # resumed; downtime ignored
     assert kitchen.attributes["last_occupied_state"] == "person"
+    assert kitchen.attributes["area_id"] == "kitchen"
 
 
 async def test_grace_period_holds_weights_at_startup(

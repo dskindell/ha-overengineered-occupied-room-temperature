@@ -16,7 +16,7 @@ type OortConfigEntry = ConfigEntry[InstanceRuntime]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
-    """Set up an OORT instance."""
+    """Set up an OORT zone."""
     entry.runtime_data = InstanceRuntime(hass, entry)
     # Platform setup waits for its entities to be added, so every room sensor has
     # restored its saved state before the runtime starts computing.
@@ -27,15 +27,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
-    """Unload an OORT instance."""
+    """Unload an OORT zone."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: OortConfigEntry) -> None:
-    """Clear the instance's Repairs issue when it is deleted."""
+    """Clear the zone's Repairs issue when it is deleted."""
     ir.async_delete_issue(hass, DOMAIN, f"no_occupancy_source_{entry.entry_id}")
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: OortConfigEntry) -> None:
-    """Reload the instance after any change to it or its rooms and people."""
+    """Reload the zone after its options are saved."""
     hass.config_entries.async_schedule_reload(entry.entry_id)

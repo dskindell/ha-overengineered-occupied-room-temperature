@@ -1,9 +1,17 @@
-"""Config flow for OORT: instances, plus room and person subentries."""
+"""Config flow for OORT zones.
+
+Creating a zone and configuring it later use the same menu: *Defaults*,
+*Rooms*, *People*, then *Finish* (create) or *Save* (configure), offered only
+once the zone has a room. Rooms and people are kept in the zone's options
+and edited through one list form each.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any
+from uuid import uuid4
 
 import voluptuous as vol
 
@@ -11,14 +19,15 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    ConfigSubentryFlow,
-    SubentryFlowResult,
+    OptionsFlow,
 )
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import area_registry as ar, selector
 
 from .const import (
+    CHOICE_ADD,
+    CHOICE_DONE,
     CONF_ACTIVE_TEMPLATE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
@@ -26,6 +35,11 @@ from .const import (
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
     CONF_OVERRIDES,
+    CONF_PEOPLE,
+    CONF_PERSON,
+    CONF_REMOVE,
+    CONF_ROOM,
+    CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
     CONF_STALE_LIMIT,
@@ -34,8 +48,6 @@ from .const import (
     CONF_W_BASE,
     DEFAULTS,
     DOMAIN,
-    SUBENTRY_PERSON,
-    SUBENTRY_ROOM,
     TAUS,
     TAUS_POSITIVE,
     TAUS_ZERO_ALLOWED,
@@ -44,7 +56,7 @@ from .const import (
     WEIGHTS,
 )
 
-INSTANCE_SETTINGS = (*TAUS, *WEIGHTS, CONF_STALE_LIMIT)
+ZONE_SETTINGS = (*TAUS, *WEIGHTS, CONF_STALE_LIMIT)
 ROOM_OVERRIDES = (*TAUS, *WEIGHTS)
 
 
@@ -78,92 +90,15 @@ def _without_empty(values: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value not in (None, "", [])}
 
 
-# ---------------------------------------------------------------------------
-# Instance (config entry)
-# ---------------------------------------------------------------------------
+DEFAULTS_SCHEMA = vol.Schema({vol.Required(key): _number() for key in ZONE_SETTINGS})
 
-INSTANCE_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_NAME): selector.TextSelector(),
-        vol.Required(CONF_DEFAULTS): section(
-            vol.Schema(
-                {vol.Required(key, default=DEFAULTS[key]): _number() for key in INSTANCE_SETTINGS}
-            ),
-            {"collapsed": True},
-        ),
-    }
-)
+NAME_SCHEMA = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()})
 
 
-def _instance_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
-    """Flatten the form's defaults section into the stored entry data."""
-    return {CONF_NAME: user_input[CONF_NAME].strip(), **user_input[CONF_DEFAULTS]}
-
-
-def _instance_form_values(data: Mapping[str, Any]) -> dict[str, Any]:
-    """Inverse of ``_instance_data``, for pre-filling the form."""
-    return {
-        CONF_NAME: data[CONF_NAME],
-        CONF_DEFAULTS: {key: data[key] for key in INSTANCE_SETTINGS},
-    }
-
-
-class OortConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Create and reconfigure OORT instances."""
-
-    VERSION = 1
-
-    @classmethod
-    @callback
-    def async_get_supported_subentry_types(
-        cls, config_entry: ConfigEntry
-    ) -> dict[str, type[ConfigSubentryFlow]]:
-        """Rooms and people are added to an instance as subentries."""
-        return {SUBENTRY_ROOM: RoomSubentryFlow, SUBENTRY_PERSON: PersonSubentryFlow}
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Create an instance."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            data = _instance_data(user_input)
-            if (error := validate_settings(data)) is None:
-                return self.async_create_entry(title=data[CONF_NAME], data=data)
-            errors["base"] = error
-        return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(INSTANCE_SCHEMA, user_input),
-            errors=errors,
-        )
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Change an instance's name or defaults."""
-        entry = self._get_reconfigure_entry()
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            data = _instance_data(user_input)
-            if (error := validate_settings(data)) is None:
-                return self.async_update_reload_and_abort(entry, title=data[CONF_NAME], data=data)
-            errors["base"] = error
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=self.add_suggested_values_to_schema(
-                INSTANCE_SCHEMA, user_input or _instance_form_values(entry.data)
-            ),
-            errors=errors,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Room subentry
-# ---------------------------------------------------------------------------
-
-
-def _room_schema(*, include_area: bool) -> vol.Schema:
-    """Room form. The area can only be chosen when the room is added."""
+def _room_schema(*, new: bool) -> vol.Schema:
+    """Room form. The area is chosen only when the room is added."""
     schema: dict[vol.Marker, Any] = {}
-    if include_area:
+    if new:
         schema[vol.Required(CONF_AREA_ID)] = selector.AreaSelector()
     schema.update(
         {
@@ -190,170 +125,344 @@ def _room_schema(*, include_area: bool) -> vol.Schema:
             ),
         }
     )
+    if not new:
+        schema[vol.Optional(CONF_REMOVE, default=False)] = selector.BooleanSelector()
     return vol.Schema(schema)
 
 
-def _has_occupancy_source(data: Mapping[str, Any]) -> bool:
-    return bool(data.get(CONF_OCCUPANCY_SENSORS) or data.get(CONF_OCCUPANCY_TEMPLATE))
+def _person_schema(*, new: bool) -> vol.Schema:
+    schema: dict[vol.Marker, Any] = {
+        vol.Required(CONF_NAME): selector.TextSelector(),
+        vol.Required(CONF_SOURCE_ENTITY): selector.EntitySelector(),
+    }
+    if not new:
+        schema[vol.Optional(CONF_REMOVE, default=False)] = selector.BooleanSelector()
+    return vol.Schema(schema)
 
 
-class RoomSubentryFlow(ConfigSubentryFlow):
-    """Add or edit a room."""
+def _person_details_schema(entity_id: str) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Optional(CONF_SOURCE_ATTRIBUTE): selector.AttributeSelector(
+                selector.AttributeSelectorConfig(entity_id=entity_id)
+            ),
+            vol.Required(CONF_VALUE_TYPE, default=VALUE_TYPE_AREA_NAME): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[VALUE_TYPE_AREA_NAME, VALUE_TYPE_AREA_ID],
+                    translation_key=CONF_VALUE_TYPE,
+                )
+            ),
+        }
+    )
 
-    _pending: dict[str, Any]
 
-    async def async_step_user(
+def _choice_schema(key: str, items: dict[str, str], add_label: str) -> vol.Schema:
+    """A list form: the existing items, then "add" and "done".
+
+    The translation key covers only "add" and "done"; the items' own labels are
+    names from the user's setup (experiment: does the frontend fall back to them?).
+    """
+    options = [
+        selector.SelectOptionDict(value=value, label=label) for value, label in items.items()
+    ]
+    options.append(selector.SelectOptionDict(value=CHOICE_ADD, label=add_label))
+    options.append(selector.SelectOptionDict(value=CHOICE_DONE, label="Done"))
+    return vol.Schema(
+        {
+            vol.Required(key, default=CHOICE_DONE if items else CHOICE_ADD): (
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.LIST,
+                        translation_key=f"{key}_choice",
+                    )
+                )
+            )
+        }
+    )
+
+
+class ZoneMenu:
+    """The zone menu and its screens, shared by the create and configure flows.
+
+    Subclasses set ``finish_step`` and provide ``async_step_<finish_step>``.
+    Nothing is written to the config entry until that step runs.
+    """
+
+    finish_step: str
+
+    _defaults: dict[str, Any]
+    _rooms: dict[str, dict[str, Any]]
+    _people: dict[str, dict[str, Any]]
+    _room_id: str | None
+    _person_id: str | None
+    _pending_person: dict[str, Any]
+
+    # These come from the flow handler the menu is mixed into.
+    hass: Any
+    async_show_menu: Any
+    async_show_form: Any
+    add_suggested_values_to_schema: Any
+
+    def _load(self, options: Mapping[str, Any]) -> None:
+        options = deepcopy(dict(options))
+        self._defaults = options.get(CONF_DEFAULTS, dict(DEFAULTS))
+        self._rooms = options.get(CONF_ROOMS, {})
+        self._people = options.get(CONF_PEOPLE, {})
+
+    def _options(self) -> dict[str, Any]:
+        return {CONF_DEFAULTS: self._defaults, CONF_ROOMS: self._rooms, CONF_PEOPLE: self._people}
+
+    def _area_name(self, area_id: str) -> str:
+        area = ar.async_get(self.hass).async_get_area(area_id)
+        return area.name if area else area_id
+
+    # -- menu -----------------------------------------------------------------
+
+    async def async_step_menu(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The zone menu; *Finish*/*Save* only once there's a room."""
+        options = [CONF_DEFAULTS, CONF_ROOMS, CONF_PEOPLE]
+        if self._rooms:
+            options.append(self.finish_step)
+        rooms = sorted(self._area_name(area_id) for area_id in self._rooms)
+        people = sorted(person[CONF_NAME] for person in self._people.values())
+        return self.async_show_menu(
+            step_id="menu",
+            menu_options=options,
+            description_placeholders={
+                "rooms": ", ".join(rooms) or "none yet",
+                "people": ", ".join(people) or "none",
+            },
+        )
+
+    async def async_step_defaults(
         self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Add a room."""
-        return await self._async_step_room(user_input, reconfiguring=False)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Edit a room."""
-        return await self._async_step_room(user_input, reconfiguring=True)
-
-    async def _async_step_room(
-        self, user_input: dict[str, Any] | None, *, reconfiguring: bool
-    ) -> SubentryFlowResult:
-        entry = self._get_entry()
+    ) -> ConfigFlowResult:
+        """The zone's default taus, weights and stale limit."""
         errors: dict[str, str] = {}
-
         if user_input is not None:
-            data = _without_empty({k: v for k, v in user_input.items() if k != CONF_OVERRIDES})
-            data[CONF_OVERRIDES] = _without_empty(user_input.get(CONF_OVERRIDES, {}))
-            if reconfiguring:
-                data[CONF_AREA_ID] = self._get_reconfigure_subentry().data[CONF_AREA_ID]
-            elif any(
-                subentry.subentry_type == SUBENTRY_ROOM and subentry.unique_id == data[CONF_AREA_ID]
-                for subentry in entry.subentries.values()
-            ):
-                errors[CONF_AREA_ID] = "area_already_configured"
-
-            if (error := validate_settings(data[CONF_OVERRIDES])) is not None:
-                errors["base"] = error
-
-            if not errors:
-                self._pending = data
-                if _has_occupancy_source(data) or any(
-                    subentry.subentry_type == SUBENTRY_PERSON
-                    for subentry in entry.subentries.values()
-                ):
-                    return self._async_save_room()
-                return await self.async_step_no_occupancy_source()
-
-        suggested = user_input
-        if suggested is None and reconfiguring:
-            suggested = dict(self._get_reconfigure_subentry().data)
+            if (error := validate_settings(user_input)) is None:
+                self._defaults = dict(user_input)
+                return await self.async_step_menu()
+            errors["base"] = error
         return self.async_show_form(
-            step_id="reconfigure" if reconfiguring else "user",
+            step_id=CONF_DEFAULTS,
             data_schema=self.add_suggested_values_to_schema(
-                _room_schema(include_area=not reconfiguring), suggested
+                DEFAULTS_SCHEMA, user_input or self._defaults
             ),
             errors=errors,
         )
 
-    async def async_step_no_occupancy_source(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Note (not an error) that this room can never count as occupied."""
+    # -- rooms ----------------------------------------------------------------
+
+    async def async_step_rooms(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick a room to edit, add one, or go back to the menu."""
         if user_input is not None:
-            return self._async_save_room()
-        return self.async_show_form(step_id="no_occupancy_source", data_schema=vol.Schema({}))
-
-    @callback
-    def _async_save_room(self) -> SubentryFlowResult:
-        data = self._pending
-        area = ar.async_get(self.hass).async_get_area(data[CONF_AREA_ID])
-        title = area.name if area else data[CONF_AREA_ID]
-        if self.source == "reconfigure":
-            return self.async_update_and_abort(
-                self._get_entry(), self._get_reconfigure_subentry(), title=title, data=data
-            )
-        return self.async_create_entry(title=title, data=data, unique_id=data[CONF_AREA_ID])
-
-
-# ---------------------------------------------------------------------------
-# Person subentry
-# ---------------------------------------------------------------------------
-
-PERSON_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_NAME): selector.TextSelector(),
-        vol.Required(CONF_SOURCE_ENTITY): selector.EntitySelector(),
-        vol.Required(CONF_VALUE_TYPE, default=VALUE_TYPE_AREA_NAME): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[VALUE_TYPE_AREA_NAME, VALUE_TYPE_AREA_ID],
-                translation_key=CONF_VALUE_TYPE,
-            )
-        ),
-    }
-)
-
-
-class PersonSubentryFlow(ConfigSubentryFlow):
-    """Add or edit a person: the location source, then an optional attribute of it."""
-
-    _pending: dict[str, Any]
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Add a person."""
-        return await self._async_step_person(user_input, suggested=None)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Edit a person."""
-        return await self._async_step_person(
-            user_input, suggested=dict(self._get_reconfigure_subentry().data)
+            choice = user_input[CONF_ROOM]
+            if choice == CHOICE_DONE:
+                return await self.async_step_menu()
+            if choice == CHOICE_ADD:
+                self._room_id = None
+                return await self.async_step_room()
+            self._room_id = choice
+            return await self.async_step_room_edit()
+        items = {area_id: self._area_name(area_id) for area_id in self._rooms}
+        return self.async_show_form(
+            step_id=CONF_ROOMS,
+            data_schema=_choice_schema(CONF_ROOM, items, "Add a new room"),
         )
 
-    async def _async_step_person(
-        self, user_input: dict[str, Any] | None, *, suggested: dict[str, Any] | None
-    ) -> SubentryFlowResult:
-        if user_input is not None:
-            self._pending = {**user_input, CONF_NAME: user_input[CONF_NAME].strip()}
-            return await self.async_step_attribute()
-        return self.async_show_form(
-            step_id=self.source,
-            data_schema=self.add_suggested_values_to_schema(PERSON_SCHEMA, suggested),
-        )
+    async def async_step_room(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a room."""
+        return await self._async_room_form("room", user_input, None)
 
-    async def async_step_attribute(
+    async def async_step_room_edit(
         self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Optionally read an attribute of the source entity instead of its state."""
-        if user_input is not None:
-            data = {**self._pending, **_without_empty(user_input)}
-            if self.source == "reconfigure":
-                return self.async_update_and_abort(
-                    self._get_entry(),
-                    self._get_reconfigure_subentry(),
-                    title=data[CONF_NAME],
-                    data=data,
-                )
-            return self.async_create_entry(title=data[CONF_NAME], data=data)
+    ) -> ConfigFlowResult:
+        """Edit or remove a room. Its area is fixed."""
+        return await self._async_room_form("room_edit", user_input, self._room_id)
 
-        suggested = None
-        if self.source == "reconfigure":
-            previous = self._get_reconfigure_subentry().data
-            if previous[CONF_SOURCE_ENTITY] == self._pending[CONF_SOURCE_ENTITY]:
-                suggested = {CONF_SOURCE_ATTRIBUTE: previous.get(CONF_SOURCE_ATTRIBUTE)}
+    async def _async_room_form(
+        self, step_id: str, user_input: dict[str, Any] | None, area_id: str | None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if area_id is not None and user_input.get(CONF_REMOVE):
+                del self._rooms[area_id]
+                return await self.async_step_rooms()
+            fields = {k: v for k, v in user_input.items() if k not in (CONF_OVERRIDES, CONF_REMOVE)}
+            data = _without_empty(fields)
+            data[CONF_OVERRIDES] = _without_empty(user_input.get(CONF_OVERRIDES, {}))
+            if area_id is None:
+                if data[CONF_AREA_ID] in self._rooms:
+                    errors[CONF_AREA_ID] = "area_already_configured"
+            else:
+                data[CONF_AREA_ID] = area_id
+            if (error := validate_settings(data[CONF_OVERRIDES])) is not None:
+                errors["base"] = error
+            if not errors:
+                self._rooms[data[CONF_AREA_ID]] = data
+                if not self._people and not (
+                    data.get(CONF_OCCUPANCY_SENSORS) or data.get(CONF_OCCUPANCY_TEMPLATE)
+                ):
+                    return await self.async_step_room_no_occupancy()
+                return await self.async_step_rooms()
+
+        suggested = user_input
+        if suggested is None and area_id is not None:
+            suggested = self._rooms[area_id]
         return self.async_show_form(
-            step_id="attribute",
+            step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(
-                    {
-                        vol.Optional(CONF_SOURCE_ATTRIBUTE): selector.AttributeSelector(
-                            selector.AttributeSelectorConfig(
-                                entity_id=self._pending[CONF_SOURCE_ENTITY]
-                            )
-                        )
-                    }
-                ),
-                suggested,
+                _room_schema(new=area_id is None), suggested
             ),
+            errors=errors,
+            description_placeholders={"area": self._area_name(area_id)} if area_id else None,
         )
+
+    async def async_step_room_no_occupancy(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Note (not an error): this room can never count as occupied yet."""
+        if user_input is not None:
+            return await self.async_step_rooms()
+        return self.async_show_form(step_id="room_no_occupancy", data_schema=vol.Schema({}))
+
+    # -- people ---------------------------------------------------------------
+
+    async def async_step_people(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick a person to edit, add one, or go back to the menu."""
+        if user_input is not None:
+            choice = user_input[CONF_PERSON]
+            if choice == CHOICE_DONE:
+                return await self.async_step_menu()
+            self._person_id = None if choice == CHOICE_ADD else choice
+            return await self.async_step_person()
+        items = {person_id: person[CONF_NAME] for person_id, person in self._people.items()}
+        return self.async_show_form(
+            step_id=CONF_PEOPLE,
+            data_schema=_choice_schema(CONF_PERSON, items, "Add a new person"),
+        )
+
+    async def async_step_person(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add or edit a person, step 1: name and location entity."""
+        errors: dict[str, str] = {}
+        person_id = self._person_id
+        if user_input is not None:
+            if person_id is not None and user_input.get(CONF_REMOVE):
+                del self._people[person_id]
+                return await self.async_step_people()
+            name = user_input[CONF_NAME].strip()
+            if not name:
+                errors[CONF_NAME] = "name_blank"
+            else:
+                self._pending_person = {
+                    CONF_NAME: name,
+                    CONF_SOURCE_ENTITY: user_input[CONF_SOURCE_ENTITY],
+                }
+                return await self.async_step_person_details()
+
+        suggested = user_input
+        if suggested is None and person_id is not None:
+            suggested = self._people[person_id]
+        return self.async_show_form(
+            step_id=CONF_PERSON,
+            data_schema=self.add_suggested_values_to_schema(
+                _person_schema(new=person_id is None), suggested
+            ),
+            errors=errors,
+        )
+
+    async def async_step_person_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step 2: optional attribute, and whether the value is an area name or ID."""
+        pending = self._pending_person
+        entity_id = pending[CONF_SOURCE_ENTITY]
+        if user_input is not None:
+            person = {**pending, **_without_empty(user_input)}
+            self._people[self._person_id or uuid4().hex] = person
+            return await self.async_step_people()
+
+        suggested: dict[str, Any] = {}
+        if self._person_id is not None:
+            previous = self._people[self._person_id]
+            suggested[CONF_VALUE_TYPE] = previous[CONF_VALUE_TYPE]
+            if previous[CONF_SOURCE_ENTITY] == entity_id and CONF_SOURCE_ATTRIBUTE in previous:
+                suggested[CONF_SOURCE_ATTRIBUTE] = previous[CONF_SOURCE_ATTRIBUTE]
+        state = self.hass.states.get(entity_id)
+        return self.async_show_form(
+            step_id="person_details",
+            data_schema=self.add_suggested_values_to_schema(
+                _person_details_schema(entity_id), suggested
+            ),
+            description_placeholders={
+                "entity": entity_id,
+                "state": state.state if state is not None else "not found",
+            },
+        )
+
+
+class OortConfigFlow(ZoneMenu, ConfigFlow, domain=DOMAIN):
+    """Create a zone: name it, then the zone menu."""
+
+    VERSION = 1
+    finish_step = "finish"
+
+    _name: str
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OortOptionsFlow:
+        """Configure an existing zone through the same menu."""
+        return OortOptionsFlow()
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Name the zone."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = user_input[CONF_NAME].strip()
+            taken = {
+                entry.title.strip().casefold()
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+            }
+            if not name:
+                errors[CONF_NAME] = "name_blank"
+            elif name.casefold() in taken:
+                errors[CONF_NAME] = "name_exists"
+            else:
+                self._name = name
+                self._load({})
+                return await self.async_step_menu()
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(NAME_SCHEMA, user_input),
+            errors=errors,
+        )
+
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the zone with everything set up in the menu."""
+        return self.async_create_entry(
+            title=self._name, data={CONF_NAME: self._name}, options=self._options()
+        )
+
+
+class OortOptionsFlow(ZoneMenu, OptionsFlow):
+    """Configure a zone: the same menu, then *Save*."""
+
+    finish_step = "save"
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Start from the zone's saved options."""
+        self._load(self.config_entry.options)
+        return await self.async_step_menu()
+
+    async def async_step_save(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Save the changes; the zone reloads (update listener)."""
+        return self.async_create_entry(data=self._options())
