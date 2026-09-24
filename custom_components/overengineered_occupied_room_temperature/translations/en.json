@@ -1,0 +1,201 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "New OORT instance",
+        "description": "An instance weights the rooms of one HVAC zone. Add its rooms and people after creating it.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Used in entity IDs, e.g. \"Home\" gives sensor.oort_home_temperature."
+        },
+        "sections": {
+          "defaults": {
+            "name": "Defaults",
+            "description": "Times are in minutes. Rooms can override the taus and weights.",
+            "data": {
+              "tau_person_rise": "Person rise tau",
+              "tau_person_fall": "Person fall tau",
+              "tau_occupancy_rise": "Occupancy rise tau",
+              "tau_occupancy_fall": "Occupancy fall tau",
+              "tau_deactivate": "Deactivate tau",
+              "tau_dropout": "Sensor dropout tau",
+              "w_person": "Person weight",
+              "w_occupied": "Occupied weight",
+              "w_base": "Unoccupied weight",
+              "stale_limit": "Stale temperature limit"
+            },
+            "data_description": {
+              "tau_deactivate": "How fast an inactive room fades out. 0 = instantly.",
+              "tau_dropout": "How fast a room fades out when its temperature sensor is unavailable. 0 = instantly.",
+              "w_base": "Must be greater than 0.",
+              "stale_limit": "How long a room's last reading is still used after its temperature sensor drops out."
+            }
+          }
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure OORT instance",
+        "data": {
+          "name": "Name"
+        },
+        "sections": {
+          "defaults": {
+            "name": "Defaults",
+            "description": "Times are in minutes. Rooms can override the taus and weights.",
+            "data": {
+              "tau_person_rise": "Person rise tau",
+              "tau_person_fall": "Person fall tau",
+              "tau_occupancy_rise": "Occupancy rise tau",
+              "tau_occupancy_fall": "Occupancy fall tau",
+              "tau_deactivate": "Deactivate tau",
+              "tau_dropout": "Sensor dropout tau",
+              "w_person": "Person weight",
+              "w_occupied": "Occupied weight",
+              "w_base": "Unoccupied weight",
+              "stale_limit": "Stale temperature limit"
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "tau_not_positive": "Person and occupancy taus must be greater than 0.",
+      "tau_negative": "Deactivate and dropout taus can't be negative.",
+      "weight_negative": "Weights can't be negative.",
+      "base_weight_not_positive": "The unoccupied weight must be greater than 0.",
+      "stale_limit_not_positive": "The stale temperature limit must be greater than 0."
+    },
+    "abort": {
+      "reconfigure_successful": "Instance updated."
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "entry_type": "Room",
+      "initiate_flow": {
+        "user": "Add room"
+      },
+      "step": {
+        "user": {
+          "title": "Add room",
+          "data": {
+            "area_id": "Area",
+            "temperature_sensor": "Temperature sensor",
+            "occupancy_sensors": "Occupancy sensors",
+            "occupancy_template": "Occupancy template",
+            "active_template": "Active template"
+          },
+          "data_description": {
+            "occupancy_sensors": "The room counts as occupied while any of these is on.",
+            "occupancy_template": "When true, the room also counts as occupied.",
+            "active_template": "When false, the room is left out and its weight fades to 0."
+          },
+          "sections": {
+            "overrides": {
+              "name": "Overrides",
+              "description": "Leave blank to use the instance defaults. Times are in minutes.",
+              "data": {
+                "tau_person_rise": "Person rise tau",
+                "tau_person_fall": "Person fall tau",
+                "tau_occupancy_rise": "Occupancy rise tau",
+                "tau_occupancy_fall": "Occupancy fall tau",
+                "tau_deactivate": "Deactivate tau",
+                "tau_dropout": "Sensor dropout tau",
+                "w_person": "Person weight",
+                "w_occupied": "Occupied weight",
+                "w_base": "Unoccupied weight"
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Edit room",
+          "data": {
+            "temperature_sensor": "Temperature sensor",
+            "occupancy_sensors": "Occupancy sensors",
+            "occupancy_template": "Occupancy template",
+            "active_template": "Active template"
+          },
+          "sections": {
+            "overrides": {
+              "name": "Overrides",
+              "description": "Leave blank to use the instance defaults. Times are in minutes.",
+              "data": {
+                "tau_person_rise": "Person rise tau",
+                "tau_person_fall": "Person fall tau",
+                "tau_occupancy_rise": "Occupancy rise tau",
+                "tau_occupancy_fall": "Occupancy fall tau",
+                "tau_deactivate": "Deactivate tau",
+                "tau_dropout": "Sensor dropout tau",
+                "w_person": "Person weight",
+                "w_occupied": "Occupied weight",
+                "w_base": "Unoccupied weight"
+              }
+            }
+          }
+        },
+        "no_occupancy_source": {
+          "title": "No way to detect occupancy",
+          "description": "This room has no occupancy sensors or occupancy template, and this instance has no people yet, so the room can never count as occupied. You can save it anyway and add people or sensors later."
+        }
+      },
+      "error": {
+        "area_already_configured": "This area is already a room in this instance.",
+        "tau_not_positive": "Person and occupancy taus must be greater than 0.",
+        "tau_negative": "Deactivate and dropout taus can't be negative.",
+        "weight_negative": "Weights can't be negative.",
+        "base_weight_not_positive": "The unoccupied weight must be greater than 0."
+      },
+      "abort": {
+        "reconfigure_successful": "Room updated."
+      }
+    },
+    "person": {
+      "entry_type": "Person",
+      "initiate_flow": {
+        "user": "Add person"
+      },
+      "step": {
+        "user": {
+          "title": "Add person",
+          "data": {
+            "name": "Name",
+            "source_entity": "Location sensor",
+            "value_type": "The location is an"
+          },
+          "data_description": {
+            "source_entity": "A sensor whose state (or an attribute, next step) is the area this person is in."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit person",
+          "data": {
+            "name": "Name",
+            "source_entity": "Location sensor",
+            "value_type": "The location is an"
+          }
+        },
+        "attribute": {
+          "title": "Attribute (optional)",
+          "description": "Leave blank to use the sensor's state.",
+          "data": {
+            "source_attribute": "Attribute"
+          }
+        }
+      },
+      "abort": {
+        "reconfigure_successful": "Person updated."
+      }
+    }
+  },
+  "selector": {
+    "value_type": {
+      "options": {
+        "area_name": "Area name",
+        "area_id": "Area ID"
+      }
+    }
+  }
+}

@@ -6,8 +6,10 @@ OORT needs a climate controller that can use an external temperature sensor as i
 
 ## Development
 
+Tests run against Home Assistant 2026.9.3 (via `pytest-homeassistant-custom-component`), which needs Python 3.14:
+
 ```sh
-python3 -m venv .venv
-.venv/bin/pip install -r requirements_test.txt
+uv venv --python 3.14 .venv
+uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```

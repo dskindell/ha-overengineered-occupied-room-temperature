@@ -1,0 +1,12 @@
+{
+  "domain": "overengineered_occupied_room_temperature",
+  "name": "Overengineered Occupied-Room Temperature",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/dskindell/ha-overengineered-occupied-room-temperature",
+  "integration_type": "helper",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/dskindell/ha-overengineered-occupied-room-temperature/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
