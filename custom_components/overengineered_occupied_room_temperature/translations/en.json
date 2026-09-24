@@ -197,5 +197,11 @@
         "area_id": "Area ID"
       }
     }
+  },
+  "issues": {
+    "no_occupancy_source": {
+      "title": "Some OORT rooms can never count as occupied",
+      "description": "In the OORT instance \"{instance}\", these rooms have no occupancy sensors or occupancy template, and the instance has no people: {rooms}. They will always use the unoccupied weight. Add people to the instance, or occupancy sensors or a template to these rooms."
+    }
   }
 }

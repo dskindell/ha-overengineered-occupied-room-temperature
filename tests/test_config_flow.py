@@ -138,6 +138,10 @@ async def test_reconfigure_instance(hass: HomeAssistant) -> None:
     assert entry.title == "Upstairs"
     assert entry.data["stale_limit"] == 30
 
+    # Reconfiguring reloads (and so sets up) the instance; unload it again.
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
 
 # ---------------------------------------------------------------------------
 # Rooms

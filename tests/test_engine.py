@@ -1,5 +1,6 @@
 """Tests for the pure weighting, smoothing and averaging rules."""
 
+from itertools import pairwise
 import math
 
 import pytest
@@ -213,7 +214,7 @@ class TestAggregate:
             readings.append(result.temperature)
         assert readings[0] == pytest.approx(64.0, abs=0.05)
         assert readings[-1] == pytest.approx(69.0, abs=0.01)
-        steps = [b - a for a, b in zip(readings, readings[1:])]
+        steps = [b - a for a, b in pairwise(readings)]
         assert all(step >= 0 for step in steps)  # moves one way, no overshoot
         assert max(steps) < 5.0 / 2  # never jumps the whole gap in one minute
 
