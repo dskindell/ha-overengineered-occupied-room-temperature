@@ -1,3 +1,13 @@
-# overengineered-room-weighted-temperature
+# Overengineered Occupied-Room Temperature (OORT)
 
-Overengineered Room-Weighted Temperature (ORWT): Home Assistant custom integration producing an occupancy-weighted average of room temperatures.
+Home Assistant custom integration that keeps the rooms you're in at your chosen temperature with a whole-home HVAC system, by producing an occupancy-weighted temperature for your thermostat.
+
+OORT needs a climate controller that can use an external temperature sensor as its current temperature.
+
+## Development
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements_test.txt
+.venv/bin/python -m pytest
+```
