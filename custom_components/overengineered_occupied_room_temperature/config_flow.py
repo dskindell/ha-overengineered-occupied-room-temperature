@@ -17,6 +17,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import (
     ConfigEntry,
+    ConfigEntryBaseFlow,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -104,14 +105,14 @@ def _room_schema(*, new: bool) -> vol.Schema:
         {
             vol.Required(CONF_TEMPERATURE_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(
-                    filter=selector.EntityFilterSelectorConfig(
+                    filter=selector.EntityWithDeviceFilterSelectorConfig(
                         domain="sensor", device_class="temperature"
                     )
                 )
             ),
             vol.Optional(CONF_OCCUPANCY_SENSORS): selector.EntitySelector(
                 selector.EntitySelectorConfig(
-                    filter=selector.EntityFilterSelectorConfig(
+                    filter=selector.EntityWithDeviceFilterSelectorConfig(
                         domain=["binary_sensor", "input_boolean"]
                     ),
                     multiple=True,
@@ -182,7 +183,7 @@ def _choice_schema(key: str, items: dict[str, str], add_label: str) -> vol.Schem
     )
 
 
-class ZoneMenu:
+class ZoneMenu(ConfigEntryBaseFlow):
     """The zone menu and its screens, shared by the create and configure flows.
 
     Subclasses set ``finish_step`` and provide ``async_step_<finish_step>``.
@@ -197,12 +198,6 @@ class ZoneMenu:
     _room_id: str | None
     _person_id: str | None
     _pending_person: dict[str, Any]
-
-    # These come from the flow handler the menu is mixed into.
-    hass: Any
-    async_show_menu: Any
-    async_show_form: Any
-    add_suggested_values_to_schema: Any
 
     def _load(self, options: Mapping[str, Any]) -> None:
         options = deepcopy(dict(options))

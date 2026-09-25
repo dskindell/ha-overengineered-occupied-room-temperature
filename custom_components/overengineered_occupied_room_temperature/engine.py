@@ -158,7 +158,8 @@ def select_tau(
     taus: Taus,
 ) -> float:
     """Tau (minutes) used to approach the target for ``status``."""
-    return getattr(taus, select_tau_name(status, inputs, last_occupied_state))
+    tau: float = getattr(taus, select_tau_name(status, inputs, last_occupied_state))
+    return tau
 
 
 def step_room(
@@ -181,6 +182,7 @@ def step_room(
         elapsed = max(0.0, now - state.last_update)
     weight = approach(state.weight, state.target, state.tau, elapsed)
 
+    last_known_temperature: float | None
     if inputs.temperature is not None:
         last_known_temperature = inputs.temperature
         dropout_since = None

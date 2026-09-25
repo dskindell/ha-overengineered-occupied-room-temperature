@@ -1,4 +1,4 @@
-# Tests, coverage floor, lint and hassfest on every push to main (and on pull requests).
+# Tests, coverage floor, lint, type checking and hassfest on every push to main (and on pull requests).
 name: CI
 
 on:
@@ -32,6 +32,11 @@ jobs:
 
       - name: Lint
         run: uvx ruff check --select F,E9,B custom_components tests
+
+      - name: Type check
+        run: |
+          uv pip install --python .venv/bin/python mypy==2.3.1
+          .venv/bin/python -m mypy custom_components/overengineered_occupied_room_temperature
 
   hassfest:
     # Home Assistant's own integration validator (manifest, translations, config
