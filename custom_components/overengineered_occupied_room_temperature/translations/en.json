@@ -406,14 +406,14 @@
     },
     "room_choice": {
       "options": {
-        "__add__": "Add a new room",
-        "__done__": "Done"
+        "add-new": "Add a new room",
+        "back-to-menu": "Done"
       }
     },
     "person_choice": {
       "options": {
-        "__add__": "Add a new person",
-        "__done__": "Done"
+        "add-new": "Add a new person",
+        "back-to-menu": "Done"
       }
     }
   },

@@ -1,4 +1,4 @@
-# Tests, coverage floor and lint on every push to main (and on pull requests).
+# Tests, coverage floor, lint and hassfest on every push to main (and on pull requests).
 name: CI
 
 on:
@@ -32,3 +32,22 @@ jobs:
 
       - name: Lint
         run: uvx ruff check --select F,E9,B custom_components tests
+
+  hassfest:
+    # Home Assistant's own integration validator (manifest, translations, config
+    # flow). Runs the same image as the home-assistant/actions/hassfest action.
+    # The checkout is copied in with `docker cp`: a bind mount would point at the
+    # runner host's filesystem, not this job's container.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: hassfest
+        run: |
+          id=$(docker create ghcr.io/home-assistant/hassfest)
+          docker cp . "$id":/github/workspace
+          status=0
+          docker start --attach "$id" || status=$?
+          docker rm "$id" > /dev/null
+          exit "$status"

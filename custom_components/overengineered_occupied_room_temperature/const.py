@@ -15,8 +15,10 @@ CONF_PEOPLE: Final = "people"  # {person_id: person data}
 CONF_ROOM: Final = "room"
 CONF_PERSON: Final = "person"
 CONF_REMOVE: Final = "remove"
-CHOICE_ADD: Final = "__add__"
-CHOICE_DONE: Final = "__done__"
+# List-form choices. The hyphen keeps them valid translation keys that can never
+# clash with an area ID (area IDs are slugified: only a-z, 0-9 and "_").
+CHOICE_ADD: Final = "add-new"
+CHOICE_DONE: Final = "back-to-menu"
 
 # Zone defaults (options[CONF_DEFAULTS]).
 CONF_TAU_PERSON_RISE: Final = "tau_person_rise"
