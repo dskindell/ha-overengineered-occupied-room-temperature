@@ -25,6 +25,17 @@ class Status(StrEnum):
     UNOCCUPIED = "unoccupied"
 
 
+class TauName(StrEnum):
+    """The six taus; values match the ``Taus`` field names."""
+
+    PERSON_RISE = "person_rise"
+    PERSON_FALL = "person_fall"
+    OCCUPANCY_RISE = "occupancy_rise"
+    OCCUPANCY_FALL = "occupancy_fall"
+    DEACTIVATE = "deactivate"
+    DROPOUT = "dropout"
+
+
 @dataclass(frozen=True, slots=True)
 class Taus:
     """Time constants in minutes. A tau of 0 means the target is reached immediately."""
@@ -75,6 +86,8 @@ class RoomState:
     target: float = 0.0
     tau: float = 0.0
     """Tau (minutes) used while approaching ``target``."""
+    tau_name: TauName | None = None
+    """Which tau that is; None before the first update."""
     status: Status = Status.UNOCCUPIED
     last_occupied_state: Status | None = None
     last_known_temperature: float | None = None
@@ -118,27 +131,34 @@ def target_weight(status: Status, weights: Weights) -> float:
     }[status]
 
 
+def select_tau_name(
+    status: Status, inputs: RoomInputs, last_occupied_state: Status | None
+) -> TauName:
+    """Which tau approaches the target for ``status``.
+
+    Falls use the room's last non-empty state rather than its current weight, so
+    the choice is correct whatever order the weights are configured in.
+    """
+    if status is Status.PERSON:
+        return TauName.PERSON_RISE
+    if status is Status.OCCUPIED:
+        return TauName.OCCUPANCY_RISE
+    if status is Status.UNOCCUPIED:
+        if last_occupied_state is Status.PERSON:
+            return TauName.PERSON_FALL
+        return TauName.OCCUPANCY_FALL
+    # Deactivation takes precedence over a sensor dropout.
+    return TauName.DEACTIVATE if not inputs.active else TauName.DROPOUT
+
+
 def select_tau(
     status: Status,
     inputs: RoomInputs,
     last_occupied_state: Status | None,
     taus: Taus,
 ) -> float:
-    """Tau used to approach the target for ``status``.
-
-    Falls use the room's last non-empty state rather than its current weight, so
-    the choice is correct whatever order the weights are configured in.
-    """
-    if status is Status.PERSON:
-        return taus.person_rise
-    if status is Status.OCCUPIED:
-        return taus.occupancy_rise
-    if status is Status.UNOCCUPIED:
-        if last_occupied_state is Status.PERSON:
-            return taus.person_fall
-        return taus.occupancy_fall
-    # Deactivation takes precedence over a sensor dropout.
-    return taus.deactivate if not inputs.active else taus.dropout
+    """Tau (minutes) used to approach the target for ``status``."""
+    return getattr(taus, select_tau_name(status, inputs, last_occupied_state))
 
 
 def step_room(
@@ -175,10 +195,12 @@ def step_room(
         status if status in (Status.PERSON, Status.OCCUPIED) else state.last_occupied_state
     )
 
+    tau_name = select_tau_name(status, inputs, last_occupied_state)
     return RoomState(
         weight=weight,
         target=target_weight(status, config.weights),
-        tau=select_tau(status, inputs, last_occupied_state, config.taus),
+        tau=getattr(config.taus, tau_name),
+        tau_name=tau_name,
         status=status,
         last_occupied_state=last_occupied_state,
         last_known_temperature=last_known_temperature,

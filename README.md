@@ -163,6 +163,8 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `occupied` | The combined result of the room's occupancy sensors and occupancy template. |
 | `people` | List of the names of people currently present in this room. |
 | `target_weight` | The weight this room is currently moving toward. |
+| `tau` | The time constant (minutes) currently used to move toward `target_weight`. |
+| `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `deactivate` or `dropout` — so you can see both the direction and the reason. |
 | `last_occupied_state` | The last status that was `person` or `occupied` (used to pick the correct fall tau); `null` if the room has never been occupied. |
 
 Room weight is restored across a Home Assistant restart (the downtime itself isn't counted as elapsed time — the room resumes at the weight it had before shutdown rather than jumping as if time had passed).
@@ -225,7 +227,7 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```
 
-This runs 70 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
+This runs 71 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
 Lint with [ruff](https://docs.astral.sh/ruff/):
 

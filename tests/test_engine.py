@@ -11,6 +11,7 @@ from engine import (
     RoomInputs,
     RoomState,
     Status,
+    TauName,
     Taus,
     Weights,
     aggregate,
@@ -18,6 +19,7 @@ from engine import (
     fallback_epsilon,
     room_status,
     select_tau,
+    select_tau_name,
     step_room,
     target_weight,
 )
@@ -104,6 +106,19 @@ class TestSelectTau:
         assert select_tau(Status.INACTIVE, inputs(temperature=None), None, self.taus) == 6
         both = inputs(active=False, temperature=None)
         assert select_tau(Status.INACTIVE, both, None, self.taus) == 5
+
+    def test_names_match_the_chosen_tau(self) -> None:
+        cases = [
+            (Status.PERSON, inputs(), None, TauName.PERSON_RISE),
+            (Status.OCCUPIED, inputs(), None, TauName.OCCUPANCY_RISE),
+            (Status.UNOCCUPIED, inputs(), Status.PERSON, TauName.PERSON_FALL),
+            (Status.UNOCCUPIED, inputs(), Status.OCCUPIED, TauName.OCCUPANCY_FALL),
+            (Status.INACTIVE, inputs(active=False), None, TauName.DEACTIVATE),
+            (Status.INACTIVE, inputs(temperature=None), None, TauName.DROPOUT),
+        ]
+        for status, room_inputs, last, name in cases:
+            assert select_tau_name(status, room_inputs, last) is name
+            assert select_tau(status, room_inputs, last, self.taus) == getattr(self.taus, name)
 
 
 class TestStepRoom:

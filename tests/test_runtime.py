@@ -143,6 +143,9 @@ async def test_person_pulls_the_temperature_toward_their_room(
     assert kitchen.attributes["status"] == "person"
     assert kitchen.attributes["people"] == ["Alex"]
     assert float(kitchen.state) == 0.0  # new rooms start at 0
+    assert kitchen.attributes["tau_name"] == "person_rise"
+    assert kitchen.attributes["tau"] == 3.0
+    assert hass.states.get(OFFICE_WEIGHT).attributes["tau_name"] == "occupancy_fall"
 
     await advance(hass, freezer, 3)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1), abs=1e-6)

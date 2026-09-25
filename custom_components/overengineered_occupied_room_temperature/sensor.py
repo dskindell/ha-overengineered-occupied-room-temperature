@@ -18,7 +18,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .const import DOMAIN
-from .engine import RoomState, Status
+from .engine import RoomState, Status, TauName
 from .instance import InstanceRuntime, Room
 
 
@@ -91,6 +91,8 @@ class RoomExtraData(ExtraStoredData):
             values["status"] = Status(values["status"])
             if values.get("last_occupied_state") is not None:
                 values["last_occupied_state"] = Status(values["last_occupied_state"])
+            if values.get("tau_name") is not None:
+                values["tau_name"] = TauName(values["tau_name"])
             return RoomState(**values)
         except (KeyError, TypeError, ValueError):
             return None
@@ -134,6 +136,8 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
             "occupied": inputs.occupied if inputs else None,
             "people": self._room.people,
             "target_weight": state.target,
+            "tau": state.tau,
+            "tau_name": state.tau_name,
             "last_occupied_state": (
                 state.last_occupied_state.value if state.last_occupied_state else None
             ),
