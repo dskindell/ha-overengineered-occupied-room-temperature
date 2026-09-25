@@ -54,6 +54,9 @@
         "description": "Pick a room to edit or remove, add a new one, or choose Done.",
         "data": {
           "room": "Room"
+        },
+        "data_description": {
+          "room": "Pick a room to edit or remove it, \"Add a new room\" to add one, or \"Done\" to go back to the menu."
         }
       },
       "room": {
@@ -157,6 +160,9 @@
         "description": "People are optional. Pick one to edit or remove, add a new one, or choose Done.",
         "data": {
           "person": "Person"
+        },
+        "data_description": {
+          "person": "Pick a person to edit or remove them, \"Add a new person\" to add one, or \"Done\" to go back to the menu."
         }
       },
       "person": {
@@ -242,6 +248,9 @@
         "description": "Pick a room to edit or remove, add a new one, or choose Done.",
         "data": {
           "room": "Room"
+        },
+        "data_description": {
+          "room": "Pick a room to edit or remove it, \"Add a new room\" to add one, or \"Done\" to go back to the menu."
         }
       },
       "room": {
@@ -345,6 +354,9 @@
         "description": "People are optional. Pick one to edit or remove, add a new one, or choose Done.",
         "data": {
           "person": "Person"
+        },
+        "data_description": {
+          "person": "Pick a person to edit or remove them, \"Add a new person\" to add one, or \"Done\" to go back to the menu."
         }
       },
       "person": {
