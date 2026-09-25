@@ -1,0 +1,34 @@
+# Early warning: run the tests against the newest Home Assistant release.
+# A separate workflow from CI, so a failure here (a Home Assistant change OORT
+# hasn't caught up with yet) shows as its own status and never marks CI red.
+name: Latest Home Assistant
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC, so new releases are noticed without a push
+  workflow_dispatch:
+
+jobs:
+  test-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Python 3.14 and the newest test dependencies
+        run: |
+          uv venv --python 3.14 .venv
+          # Unpinned: the newest pytest-homeassistant-custom-component pins the newest
+          # Home Assistant. If it needs a newer Python, this step fails and says so.
+          uv pip install --python .venv/bin/python pytest-homeassistant-custom-component
+          .venv/bin/python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
+
+      - name: Tests
+        run: .venv/bin/python -m pytest -q
