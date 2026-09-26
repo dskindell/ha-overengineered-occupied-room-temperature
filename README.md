@@ -112,7 +112,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Unoccupied weight | Target weight otherwise. Must be at least 0.001. | 0.001 |
 | Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. Zone-wide only. | 5 |
 
-Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0.
+Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1000.
 
 ### Rooms
 

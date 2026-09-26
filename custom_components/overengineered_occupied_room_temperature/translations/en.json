@@ -204,7 +204,11 @@
       "tau_negative": "Deactivate and dropout taus can't be negative.",
       "weight_negative": "Weights can't be negative.",
       "stale_limit_not_positive": "The stale temperature limit must be greater than 0.",
-      "base_weight_too_small": "The unoccupied weight must be at least 0.001."
+      "base_weight_too_small": "The unoccupied weight must be at least 0.001.",
+      "value_not_finite": "Enter a number (not NaN or infinity).",
+      "tau_too_large": "Taus can be at most 1440 minutes (a day).",
+      "weight_too_large": "Weights can be at most 1000.",
+      "stale_limit_too_large": "The stale temperature limit can be at most 1440 minutes (a day)."
     },
     "abort": {
       "name_exists": "Another zone already has this name. Start again with a different name."
@@ -405,7 +409,11 @@
       "tau_negative": "Deactivate and dropout taus can't be negative.",
       "weight_negative": "Weights can't be negative.",
       "stale_limit_not_positive": "The stale temperature limit must be greater than 0.",
-      "base_weight_too_small": "The unoccupied weight must be at least 0.001."
+      "base_weight_too_small": "The unoccupied weight must be at least 0.001.",
+      "value_not_finite": "Enter a number (not NaN or infinity).",
+      "tau_too_large": "Taus can be at most 1440 minutes (a day).",
+      "weight_too_large": "Weights can be at most 1000.",
+      "stale_limit_too_large": "The stale temperature limit can be at most 1440 minutes (a day)."
     }
   },
   "selector": {

@@ -82,4 +82,9 @@ TEMPERATURE_DECIMALS: Final = 1
 # Smallest unoccupied weight: lower values change the output by hundredths of
 # a degree at most, and 0.001 still shows at the stored weight precision.
 MIN_BASE_WEIGHT: Final = 0.001
+# Upper limits: generous for any real house, and small enough
+# that sums of weights can't overflow to infinity.
+MAX_TAU: Final = 1440.0  # minutes (a day)
+MAX_WEIGHT: Final = 1000.0
+MAX_STALE_LIMIT: Final = 1440.0  # minutes (a day)
 UPDATE_INTERVAL_SECONDS: Final = 60

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+import math
 from typing import Any
 from uuid import uuid4
 
@@ -51,6 +52,9 @@ from .const import (
     CONF_W_BASE,
     DEFAULTS,
     DOMAIN,
+    MAX_STALE_LIMIT,
+    MAX_TAU,
+    MAX_WEIGHT,
     MIN_BASE_WEIGHT,
     TAUS,
     TAUS_POSITIVE,
@@ -62,20 +66,36 @@ from .const import (
 
 ZONE_SETTINGS = (*TAUS, *WEIGHTS, CONF_STALE_LIMIT)
 ROOM_OVERRIDES = (*TAUS, *WEIGHTS)
+MAXIMUM = {
+    **dict.fromkeys(TAUS, MAX_TAU),
+    **dict.fromkeys(WEIGHTS, MAX_WEIGHT),
+    CONF_STALE_LIMIT: MAX_STALE_LIMIT,
+}
 
 
-def _number() -> selector.NumberSelector:
+def _number(key: str) -> selector.NumberSelector:
     return selector.NumberSelector(
-        selector.NumberSelectorConfig(min=0, step="any", mode=selector.NumberSelectorMode.BOX)
+        selector.NumberSelectorConfig(
+            min=0, max=MAXIMUM[key], step="any", mode=selector.NumberSelectorMode.BOX
+        )
     )
 
 
 def validate_settings(values: Mapping[str, Any]) -> str | None:
     """Return an error key if any tau, weight or stale limit present in ``values`` is invalid.
 
-    The form's number fields already reject negatives; this adds the "> 0" rules
-    and guards data that didn't come through the form.
+    The form's number fields already reject negatives and values over the limits;
+    this adds the "> 0" rules and guards data that didn't come through the form.
+    NaN passes every comparison, so it's rejected first.
     """
+    if any(not math.isfinite(values[key]) for key in MAXIMUM if key in values):
+        return "value_not_finite"
+    if any(values[key] > MAX_TAU for key in TAUS if key in values):
+        return "tau_too_large"
+    if any(values[key] > MAX_WEIGHT for key in WEIGHTS if key in values):
+        return "weight_too_large"
+    if CONF_STALE_LIMIT in values and values[CONF_STALE_LIMIT] > MAX_STALE_LIMIT:
+        return "stale_limit_too_large"
     if any(values[key] <= 0 for key in TAUS_POSITIVE if key in values):
         return "tau_not_positive"
     if any(values[key] < 0 for key in TAUS_ZERO_ALLOWED if key in values):
@@ -94,7 +114,7 @@ def _without_empty(values: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value not in (None, "", [])}
 
 
-DEFAULTS_SCHEMA = vol.Schema({vol.Required(key): _number() for key in ZONE_SETTINGS})
+DEFAULTS_SCHEMA = vol.Schema({vol.Required(key): _number(key) for key in ZONE_SETTINGS})
 
 NAME_SCHEMA = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()})
 
@@ -132,7 +152,7 @@ def _room_schema(*, new: bool) -> vol.Schema:
             ),
             vol.Optional(CONF_OPENING_TEMPLATE): selector.TemplateSelector(),
             vol.Required(CONF_OVERRIDES): section(
-                vol.Schema({vol.Optional(key): _number() for key in ROOM_OVERRIDES}),
+                vol.Schema({vol.Optional(key): _number(key) for key in ROOM_OVERRIDES}),
                 {"collapsed": True},
             ),
         }

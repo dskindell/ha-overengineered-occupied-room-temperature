@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import pytest
@@ -12,6 +13,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.helpers import area_registry as ar
 
+from custom_components.overengineered_occupied_room_temperature.config_flow import (
+    validate_settings,
+)
 from custom_components.overengineered_occupied_room_temperature.const import (
     CHOICE_ADD,
     CHOICE_DONE,
@@ -254,6 +258,61 @@ async def test_defaults_form_rejects_negative_numbers(hass: HomeAssistant) -> No
     await flow.menu(CONF_DEFAULTS)
     with pytest.raises(InvalidData):
         await flow.submit({**DEFAULTS, "w_person": -1})
+
+
+@pytest.mark.parametrize("key", ["tau_person_rise", "tau_dropout", "w_person", "stale_limit"])
+async def test_defaults_form_rejects_nan(hass: HomeAssistant, key: str) -> None:
+    """The number field turns the text "nan" into NaN."""
+    flow = await start_zone(hass)
+    await flow.menu(CONF_DEFAULTS)
+    await flow.submit({**DEFAULTS, key: "nan"})
+    assert flow.result["errors"] == {"base": "value_not_finite"}
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [{"tau_person_rise": 1441}, {"w_person": 1001}, {"stale_limit": 1441}, {"w_person": "inf"}],
+)
+async def test_defaults_form_rejects_values_over_the_limits(
+    hass: HomeAssistant, settings: dict[str, Any]
+) -> None:
+    flow = await start_zone(hass)
+    await flow.menu(CONF_DEFAULTS)
+    with pytest.raises(InvalidData):
+        await flow.submit({**DEFAULTS, **settings})
+
+
+async def test_defaults_form_accepts_values_at_the_limits(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.menu(CONF_DEFAULTS)
+    await flow.submit(
+        {**DEFAULTS, "tau_occupancy_fall": 1440, "w_person": 1000, "stale_limit": 1440}
+    )
+    assert flow.step == "menu"
+
+
+async def test_room_override_rejects_nan(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.add_room("kitchen", **{CONF_OVERRIDES: {"tau_person_fall": "nan"}})
+    assert flow.step == CONF_ROOM
+    assert flow.result["errors"] == {"base": "value_not_finite"}
+
+
+@pytest.mark.parametrize(
+    ("values", "error"),
+    [
+        ({"w_person": math.inf}, "value_not_finite"),
+        ({"tau_person_rise": math.nan}, "value_not_finite"),
+        ({"tau_deactivate": 1440.5}, "tau_too_large"),
+        ({"w_base": 1000.5}, "weight_too_large"),
+        ({"stale_limit": 1440.5}, "stale_limit_too_large"),
+        ({"tau_deactivate": 1440, "w_base": 1000, "stale_limit": 1440}, None),
+    ],
+)
+def test_settings_limits_also_checked_outside_the_form(
+    values: dict[str, float], error: str | None
+) -> None:
+    assert validate_settings(values) == error
 
 
 async def test_zero_deactivate_and_dropout_taus_allowed(hass: HomeAssistant) -> None:
