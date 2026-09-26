@@ -272,6 +272,9 @@ def aggregate(
     rooms: Iterable[tuple[float, float | None]],
     current_temperatures: Iterable[float],
     epsilon: float,
+    *,
+    closed_current: Iterable[float] | None = None,
+    closed_usable: Iterable[float] | None = None,
 ) -> Aggregate:
     """Blend the rooms' weighted average with a plain-average fallback.
 
@@ -282,6 +285,11 @@ def aggregate(
     room fades toward 0. With no current readings at all (a total sensor
     outage), the plain average uses the rooms' usable last readings instead, so
     the output holds until they go stale.
+
+    Rooms that aren't open are preferred for the plain average: closed rooms'
+    current readings, then their usable last readings, and only then open rooms'
+    current readings or any usable reading. ``closed_current`` / ``closed_usable``
+    are those closed rooms' values; when omitted, no preference is applied.
     """
     weighted_sum = 0.0
     total_weight = 0.0
@@ -296,7 +304,12 @@ def aggregate(
         contributing_rooms += 1
 
     numerator, denominator = weighted_sum, total_weight
-    plain = list(current_temperatures) or usable
+    plain = (
+        list(closed_current or [])
+        or list(closed_usable or [])
+        or list(current_temperatures)
+        or usable
+    )
     if plain:
         numerator += epsilon * (sum(plain) / len(plain))
         denominator += epsilon

@@ -522,10 +522,23 @@ class InstanceRuntime:
             room.state = step_room(room.state, room.inputs, room.config, now, hold=self._hold)
             room.write_pending = write_weights or _signature(room) != before
 
+        closed = [
+            room for room in self.rooms.values() if room.inputs is not None and room.inputs.active
+        ]
         self.result = aggregate(
             ((room.state.weight, room.state.usable_temperature) for room in self.rooms.values()),
             current_temperatures,
             self.epsilon,
+            closed_current=[
+                room.inputs.temperature
+                for room in closed
+                if room.inputs is not None and room.inputs.temperature is not None
+            ],
+            closed_usable=[
+                room.state.usable_temperature
+                for room in closed
+                if room.state.usable_temperature is not None
+            ],
         )
         for update in list(self._listeners):
             update()

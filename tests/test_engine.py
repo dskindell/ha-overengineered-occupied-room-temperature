@@ -330,6 +330,26 @@ class TestAggregate:
         assert result.fallback
         assert result.contributing_rooms == 2
 
+    def test_fallback_prefers_closed_rooms(self) -> None:
+        """An open room's reading is used only if no closed room has one."""
+        result = aggregate(
+            [(0.0, 20.0), (0.0, 12.0)], [20.0, 12.0], 0.00001, closed_current=[20.0]
+        )
+        assert result.temperature == pytest.approx(20.0)
+        assert result.fallback
+
+    def test_fallback_prefers_a_closed_rooms_recent_reading_over_an_open_live_one(self) -> None:
+        result = aggregate(
+            [(0.0, 20.0), (0.0, 12.0)], [12.0], 0.00001, closed_current=[], closed_usable=[20.0]
+        )
+        assert result.temperature == pytest.approx(20.0)
+
+    def test_fallback_uses_open_rooms_when_every_room_is_open(self) -> None:
+        result = aggregate(
+            [(0.0, 20.0), (0.0, 12.0)], [20.0, 12.0], 0.00001, closed_current=[], closed_usable=[]
+        )
+        assert result.temperature == pytest.approx(16.0)
+
     def test_stale_rooms_are_not_in_the_fallback(self) -> None:
         # usable_temperature is None once stale, so only the recent room counts.
         result = aggregate([(0.0, 20.0), (0.0, None)], [], 0.00001)

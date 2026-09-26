@@ -1103,3 +1103,28 @@ async def test_reload_never_writes_a_placeholder_state(hass: HomeAssistant) -> N
     assert after_unload and STATE_UNAVAILABLE not in after_unload
     weights = [state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT and state.state != STATE_UNAVAILABLE]
     assert weights[0].attributes["status"] == "person"
+
+
+
+async def test_open_room_does_not_drive_the_output_during_an_outage(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """The only room still reporting is open, but a closed room has a recent reading."""
+    set_temperature(hass, "kitchen", "12")  # the open room (e.g. a sunroom with the door open)
+    set_temperature(hass, "office", "20")
+    hass.states.async_set("binary_sensor.kitchen_door", "on")
+    await setup_instance(
+        hass,
+        [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_door"]}), room("office")],
+        stale_limit=60,
+    )
+    await advance(hass, freezer, 60)  # kitchen has faded out (open)
+    hass.states.async_set("sensor.office_temperature", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    await advance(hass, freezer, 30)  # office weight fades too; its reading isn't stale yet
+    # Only the open kitchen is live, but the closed office's recent reading wins.
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
+
+    await advance(hass, freezer, 31)  # past the 60-minute stale limit
+    # Nothing closed is left, so the open kitchen is used rather than going unavailable.
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(12.0, abs=0.1)
