@@ -1295,3 +1295,52 @@ async def test_template_failing_at_startup_is_logged_once(
     assert kitchen.attributes["active"] is True  # a failing opening template isn't open
     errors = [r for r in caplog.records if r.levelname == "ERROR" and "OORT zone" in r.getMessage()]
     assert len(errors) == 1
+
+
+# ---------------------------------------------------------------------------
+# Temperature sensor rows while weights move
+# ---------------------------------------------------------------------------
+
+
+async def test_temperature_readings_alone_do_not_rewrite_the_temperature_sensor(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_instance(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await advance(hass, freezer, 3)  # the kitchen weight is still rising
+    seen = _record_states(hass)
+    for i in range(11):  # 55 s of readings; the output stays 20.0
+        freezer.tick(timedelta(seconds=5))
+        set_temperature(hass, "office", f"20.0{i % 2}")
+        await hass.async_block_till_done()
+    assert [state for entity_id, state in seen if entity_id == TEMPERATURE] == []
+
+    freezer.tick(timedelta(seconds=5))
+    async_fire_time_changed(hass)  # the minute timer refreshes total_weight
+    await hass.async_block_till_done()
+    rows = [state for entity_id, state in seen if entity_id == TEMPERATURE]
+    assert len(rows) == 1
+    assert rows[0].attributes["total_weight"] == pytest.approx(
+        weight(hass, KITCHEN_WEIGHT) + weight(hass, OFFICE_WEIGHT), abs=2e-4
+    )
+
+
+async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "20")  # same reading, so the value can't change
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_instance(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await advance(hass, freezer, 3)
+    seen = _record_states(hass)
+    freezer.tick(timedelta(seconds=30))
+    hass.states.async_set("sensor.alex_area", "Office")
+    await hass.async_block_till_done()
+    rows = [state for entity_id, state in seen if entity_id == TEMPERATURE]
+    assert len(rows) == 1, "written straight away, with the weights as of the move"
+    assert rows[0].attributes["total_weight"] == pytest.approx(
+        weight(hass, KITCHEN_WEIGHT) + weight(hass, OFFICE_WEIGHT), abs=2e-4
+    )

@@ -251,6 +251,10 @@ class InstanceRuntime:
             else 0.0
         )
         self.result = Aggregate(None, 0.0, 0, False)
+        # True when this update came from the timer/startup/grace end, or any room's
+        # status or inputs changed: the Temperature sensor then refreshes its
+        # attributes too.
+        self.write_all = True
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
         self._template_problems: dict[Template, str] = {}
@@ -557,6 +561,7 @@ class InstanceRuntime:
             )
             room.state = step_room(room.state, room.inputs, room.config, now, hold=self._hold)
             room.write_pending = write_weights or _signature(room) != before
+        self.write_all = any(room.write_pending for room in self.rooms.values())
 
         closed = [
             room for room in self.rooms.values() if room.inputs is not None and room.inputs.active

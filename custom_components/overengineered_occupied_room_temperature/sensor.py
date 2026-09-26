@@ -147,6 +147,27 @@ class WeightedTemperatureSensor(_OortSensor):
         super().__init__(runtime, device)
         self._attr_unique_id = temperature_unique_id(runtime.entry)
         self._attr_native_unit_of_measurement = runtime.unit
+        self._total_weight = self._current_total_weight()
+        self._written: tuple[Any, ...] | None = None
+
+    def _current_total_weight(self) -> float:
+        return round(self._runtime.result.total_weight, WEIGHT_DECIMALS)
+
+    def _visible(self) -> tuple[Any, ...]:
+        result = self._runtime.result
+        return (self.native_value, result.contributing_rooms, result.fallback)
+
+    @callback
+    def _async_on_runtime_update(self) -> None:
+        # total_weight moves on almost every temperature reading while any weight
+        # is changing, and any changed attribute makes a new state row. So write
+        # only on the minute timer, when a room's status or inputs change, or when
+        # the value, contributing_rooms or fallback change.
+        visible = self._visible()
+        if self._runtime.write_all or visible != self._written:
+            self._total_weight = self._current_total_weight()
+            self._written = visible
+            self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -161,9 +182,7 @@ class WeightedTemperatureSensor(_OortSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         result = self._runtime.result
         return {
-            # Rounded like the weights: an unrounded value would change on every
-            # update and force a new state row even though it isn't recorded.
-            "total_weight": round(result.total_weight, WEIGHT_DECIMALS),
+            "total_weight": self._total_weight,
             "contributing_rooms": result.contributing_rooms,
             "fallback": result.fallback,
         }
