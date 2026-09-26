@@ -96,6 +96,16 @@ def _is_boolean(value: Any) -> bool:
         return False
     return True
 
+
+def _render(template: Template) -> Any:
+    """Render a template once, as HA's template tracker does: the result, or the
+    ``TemplateError`` if it fails (``helpers/event.py`` ``_render_template_if_ready``)."""
+    try:
+        return template.async_render_to_info(None).result()
+    except TemplateError as err:
+        return err
+
+
 _MISSING = (None, "", STATE_UNKNOWN, STATE_UNAVAILABLE)
 
 
@@ -303,6 +313,12 @@ class InstanceRuntime:
             data = stored.extra_data.as_dict()
             if (state := saved_room_state(data)) is not None:
                 self.restore_room(area_id, state, saved_unit(data))
+        # The template tracker only starts in async_start, so render each template
+        # once now; otherwise the first result would count every template as false.
+        for room in self.rooms.values():
+            for template in (room.occupancy_template, room.opening_template):
+                if template is not None and template not in self._template_results:
+                    self._template_results[template] = _render(template)
         self.async_update()
 
     @callback

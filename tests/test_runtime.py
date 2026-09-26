@@ -1237,3 +1237,61 @@ async def test_re_added_room_starts_at_zero_not_its_old_state(
     hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_ROOMS: all_rooms})
     await hass.async_block_till_done()
     assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Templates in the first state
+# ---------------------------------------------------------------------------
+
+
+async def test_first_state_reflects_the_occupancy_template(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    seen = _record_states(hass)
+    await setup_instance(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
+    statuses = [state.attributes["status"] for entity_id, state in seen if entity_id == KITCHEN_WEIGHT]
+    assert statuses and set(statuses) == {"occupied"}
+
+
+async def test_first_state_reflects_the_opening_template(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    seen = _record_states(hass)
+    await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ true }}"})])
+    first = next(state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT)
+    assert first.attributes["active"] is False
+    assert first.attributes["status"] == "inactive"
+
+
+async def test_person_fall_carries_on_after_a_restart_with_an_occupancy_template(
+    hass: HomeAssistant,
+) -> None:
+    now = dt_util.utcnow().timestamp()
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(KITCHEN_WEIGHT, "0.8"),
+                {
+                    "weight": 0.8, "target": 0.5, "tau": 3.0, "tau_name": "person_fall",
+                    "status": "occupied", "last_occupied_state": "occupied",
+                    "last_known_temperature": 20.0, "last_seen": now,
+                    "dropout_since": None, "stale": False, "last_update": now,
+                },
+            )
+        ],
+    )
+    set_temperature(hass, "kitchen", "20")
+    await setup_instance(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["tau_name"] == "person_fall"
+
+
+async def test_template_failing_at_startup_is_logged_once(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    await setup_instance(
+        hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ states('x') | float }}"})]
+    )
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert kitchen.attributes["active"] is True  # a failing opening template isn't open
+    errors = [r for r in caplog.records if r.levelname == "ERROR" and "OORT zone" in r.getMessage()]
+    assert len(errors) == 1

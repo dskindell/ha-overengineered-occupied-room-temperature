@@ -44,12 +44,12 @@ The weight doesn't jump straight to its target — it moves there exponentially,
 Every minute (and on every relevant state change), OORT recomputes each room's weight and combines all the rooms into one number:
 
 ```
-temperature = Σ(room_weight × room_temperature) + ε × average(all_valid_room_temperatures)
-              ─────────────────────────────────────────────────────────────────────────
+temperature = Σ(room_weight × room_temperature) + ε × fallback_average
+              ──────────────────────────────────────────────────────
               Σ(room_weight) + ε
 ```
 
-The small extra term (weight `ε`, fixed at 1% of your smallest room's *unoccupied weight*) is a plain average of every room with a valid reading, whether or not that room is currently counted as active. It's negligible while any room has a meaningful weight, but it keeps the output sane — rather than undefined — if every room's weight has decayed to (near) zero. See [Fallback and stale sensors](#fallback-and-stale-sensors).
+The small extra term (weight `ε`, fixed at 1% of your smallest room's *unoccupied weight*) is a plain average of the rooms' readings — rooms that aren't open are preferred. It's negligible while any room has a meaningful weight, but it keeps the output sane — rather than undefined — if every room's weight has decayed to (near) zero. See [Fallback and stale sensors](#fallback-and-stale-sensors).
 
 ## Is this for me?
 
@@ -232,7 +232,7 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```
 
-This runs 155 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
+This runs the tests for the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
 Lint with [ruff](https://docs.astral.sh/ruff/):
 
