@@ -52,7 +52,7 @@ from .const import (
     CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
-    CONF_TEMPERATURE_SENSOR,
+    CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     DOMAIN,
@@ -103,7 +103,8 @@ class Room:
 
     area_id: str
     name: str
-    temperature_sensor: str
+    temperature_sensors: list[str]
+    """One for now; stored as a list for several sensors per room later."""
     occupancy_sensors: list[str]
     occupancy_template: Template | None
     opening_sensors: list[str]
@@ -197,7 +198,7 @@ class InstanceRuntime:
             self.rooms[area_id] = Room(
                 area_id=area_id,
                 name=area.name if area else area_id,
-                temperature_sensor=data[CONF_TEMPERATURE_SENSOR],
+                temperature_sensors=data[CONF_TEMPERATURE_SENSORS],
                 occupancy_sensors=list(data.get(CONF_OCCUPANCY_SENSORS, [])),
                 occupancy_template=self._template(data.get(CONF_OCCUPANCY_TEMPLATE)),
                 opening_sensors=list(data.get(CONF_OPENING_SENSORS, [])),
@@ -294,7 +295,7 @@ class InstanceRuntime:
         entry = self.entry
         watched = {person.source_entity for person in self.people}
         for room in self.rooms.values():
-            watched.add(room.temperature_sensor)
+            watched.update(room.temperature_sensors)
             watched.update(room.occupancy_sensors)
             watched.update(room.opening_sensors)
         if watched:
@@ -518,7 +519,7 @@ class InstanceRuntime:
                 person_present=bool(room.people),
                 occupied=self._any_on(room.occupancy_sensors)
                 or self._template_true(room.occupancy_template),
-                temperature=self._temperature(room.temperature_sensor),
+                temperature=self._temperature(room.temperature_sensors[0]),
             )
 
         step = step_zone(

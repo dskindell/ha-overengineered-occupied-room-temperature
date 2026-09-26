@@ -44,6 +44,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TEMPERATURE_SENSORS,
     CONF_VALUE_TYPE,
     DEFAULTS,
     DOMAIN,
@@ -62,7 +63,7 @@ def room(area_id: str, **fields: Any) -> tuple[str, str, dict[str, Any]]:
         area_id,
         {
             CONF_AREA_ID: area_id,
-            CONF_TEMPERATURE_SENSOR: f"sensor.{area_id}_temperature",
+            CONF_TEMPERATURE_SENSORS: [f"sensor.{area_id}_temperature"],
             CONF_OVERRIDES: {},
             **fields,
         },

@@ -35,6 +35,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TEMPERATURE_SENSORS,
     CONF_VALUE_TYPE,
     DEFAULTS,
     DOMAIN,
@@ -61,7 +62,7 @@ def room_input(area_id: str | None = None, **fields: Any) -> dict[str, Any]:
 def room_data(area_id: str, **fields: Any) -> dict[str, Any]:
     return {
         CONF_AREA_ID: area_id,
-        CONF_TEMPERATURE_SENSOR: "sensor.room_temperature",
+        CONF_TEMPERATURE_SENSORS: ["sensor.room_temperature"],
         CONF_OVERRIDES: {},
         **fields,
     }
@@ -409,6 +410,12 @@ async def test_edit_room_keeps_area_and_prefills(hass: HomeAssistant) -> None:
     assert CONF_AREA_ID not in schema_keys, "the area can't be changed"
     assert CONF_REMOVE in schema_keys
     assert flow.result["description_placeholders"]["area"] == "Kitchen"
+    suggested = {
+        str(key): key.description["suggested_value"]
+        for key in flow.result["data_schema"].schema
+        if key.description
+    }
+    assert suggested[CONF_TEMPERATURE_SENSOR] == "sensor.room_temperature"  # from the list
 
     await flow.submit(
         room_input(**{CONF_TEMPERATURE_SENSOR: "sensor.new", CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})
@@ -418,7 +425,7 @@ async def test_edit_room_keeps_area_and_prefills(hass: HomeAssistant) -> None:
     result = await flow.menu("save")
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_ROOMS]["kitchen"] == room_data(
-        "kitchen", **{CONF_TEMPERATURE_SENSOR: "sensor.new", CONF_OCCUPANCY_TEMPLATE: "{{ true }}"}
+        "kitchen", **{CONF_TEMPERATURE_SENSORS: ["sensor.new"], CONF_OCCUPANCY_TEMPLATE: "{{ true }}"}
     )
 
 

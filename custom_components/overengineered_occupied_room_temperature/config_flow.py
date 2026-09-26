@@ -46,6 +46,7 @@ from .const import (
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     DEFAULTS,
@@ -303,6 +304,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
                 return await self.async_step_rooms()
             fields = {k: v for k, v in user_input.items() if k not in (CONF_OVERRIDES, CONF_REMOVE)}
             data = _without_empty(fields)
+            data[CONF_TEMPERATURE_SENSORS] = [data.pop(CONF_TEMPERATURE_SENSOR)]
             data[CONF_OVERRIDES] = _without_empty(user_input.get(CONF_OVERRIDES, {}))
             if area_id is None:
                 if data[CONF_AREA_ID] in self._rooms:
@@ -321,7 +323,8 @@ class ZoneMenu(ConfigEntryBaseFlow):
 
         suggested = user_input
         if suggested is None and area_id is not None:
-            suggested = self._rooms[area_id]
+            stored = self._rooms[area_id]
+            suggested = {**stored, CONF_TEMPERATURE_SENSOR: stored[CONF_TEMPERATURE_SENSORS][0]}
         return self.async_show_form(
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(

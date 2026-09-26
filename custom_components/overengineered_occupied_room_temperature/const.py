@@ -37,6 +37,9 @@ CONF_STALE_LIMIT: Final = "stale_limit"
 
 # Room data (options[CONF_ROOMS][area_id]).
 CONF_AREA_ID: Final = "area_id"
+# Stored as a list, ready for several sensors per room; the form still takes one.
+CONF_TEMPERATURE_SENSORS: Final = "temperature_sensors"
+# The room form's single temperature-sensor field.
 CONF_TEMPERATURE_SENSOR: Final = "temperature_sensor"
 CONF_OCCUPANCY_SENSORS: Final = "occupancy_sensors"
 CONF_OCCUPANCY_TEMPLATE: Final = "occupancy_template"
