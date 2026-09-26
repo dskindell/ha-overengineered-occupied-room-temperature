@@ -121,6 +121,64 @@ class TestSelectTau:
             assert select_tau(status, room_inputs, last, self.taus) == getattr(self.taus, name)
 
 
+class TestPersonLeavesOccupiedRoom:
+    """Leaving ``person`` for ``occupied`` uses person fall, not occupancy rise."""
+
+    taus = Taus(
+        person_rise=1, person_fall=2, occupancy_rise=3, occupancy_fall=4, deactivate=5, dropout=6
+    )
+
+    def test_select_tau_uses_person_fall_when_the_person_leaves(self) -> None:
+        name = select_tau_name(
+            Status.OCCUPIED, inputs(occupied=True), Status.OCCUPIED, previous_status=Status.PERSON
+        )
+        assert name is TauName.PERSON_FALL
+        assert (
+            select_tau(
+                Status.OCCUPIED,
+                inputs(occupied=True),
+                Status.OCCUPIED,
+                self.taus,
+                previous_status=Status.PERSON,
+            )
+            == 2
+        )
+
+    def test_arriving_at_occupied_from_elsewhere_still_rises(self) -> None:
+        for previous in (None, Status.UNOCCUPIED, Status.INACTIVE, Status.OCCUPIED):
+            name = select_tau_name(
+                Status.OCCUPIED, inputs(occupied=True), None, previous_status=previous
+            )
+            assert name is TauName.OCCUPANCY_RISE, previous
+
+    def test_person_then_occupied_then_empty(self) -> None:
+        config = RoomConfig(taus=self.taus)
+        state = RoomState(
+            weight=1.0,
+            target=1.0,
+            tau=1,
+            tau_name=TauName.PERSON_RISE,
+            status=Status.PERSON,
+            last_occupied_state=Status.PERSON,
+            last_known_temperature=70.0,
+            last_update=0.0,
+        )
+        # The person leaves; the occupancy sensor is still on.
+        state = step_room(state, inputs(occupied=True), config, 0.0)
+        assert (state.status, state.tau_name, state.target) == (
+            Status.OCCUPIED,
+            TauName.PERSON_FALL,
+            0.5,
+        )
+        state = step_room(state, inputs(occupied=True), config, 2 * MINUTE)
+        assert state.weight == pytest.approx(0.5 + 0.5 * math.exp(-1))  # person fall, tau 2
+        assert state.tau_name is TauName.PERSON_FALL  # still leaving person on later updates
+
+        # The sensor turns off: sensor occupancy is what ends now.
+        state = step_room(state, inputs(), config, 2 * MINUTE)
+        assert (state.status, state.tau_name) == (Status.UNOCCUPIED, TauName.OCCUPANCY_FALL)
+
+
 class TestStepRoom:
     def test_new_room_starts_at_zero_and_rises(self) -> None:
         state = step_room(RoomState(), inputs(person=True), CONFIG, 0.0)

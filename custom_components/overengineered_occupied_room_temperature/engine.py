@@ -132,16 +132,28 @@ def target_weight(status: Status, weights: Weights) -> float:
 
 
 def select_tau_name(
-    status: Status, inputs: RoomInputs, last_occupied_state: Status | None
+    status: Status,
+    inputs: RoomInputs,
+    last_occupied_state: Status | None,
+    *,
+    previous_status: Status | None = None,
+    previous_tau_name: TauName | None = None,
 ) -> TauName:
     """Which tau approaches the target for ``status``.
 
     Falls use the room's last non-empty state rather than its current weight, so
-    the choice is correct whatever order the weights are configured in.
+    the choice is correct whatever order the weights are configured in. A room a
+    tracked person has just left, but whose occupancy sensor is still on, is
+    falling from ``person``: it uses person fall for as long as it stays
+    ``occupied``.
     """
     if status is Status.PERSON:
         return TauName.PERSON_RISE
     if status is Status.OCCUPIED:
+        if previous_status is Status.PERSON or (
+            previous_status is Status.OCCUPIED and previous_tau_name is TauName.PERSON_FALL
+        ):
+            return TauName.PERSON_FALL
         return TauName.OCCUPANCY_RISE
     if status is Status.UNOCCUPIED:
         if last_occupied_state is Status.PERSON:
@@ -156,9 +168,19 @@ def select_tau(
     inputs: RoomInputs,
     last_occupied_state: Status | None,
     taus: Taus,
+    *,
+    previous_status: Status | None = None,
+    previous_tau_name: TauName | None = None,
 ) -> float:
     """Tau (minutes) used to approach the target for ``status``."""
-    tau: float = getattr(taus, select_tau_name(status, inputs, last_occupied_state))
+    name = select_tau_name(
+        status,
+        inputs,
+        last_occupied_state,
+        previous_status=previous_status,
+        previous_tau_name=previous_tau_name,
+    )
+    tau: float = getattr(taus, name)
     return tau
 
 
@@ -197,7 +219,13 @@ def step_room(
         status if status in (Status.PERSON, Status.OCCUPIED) else state.last_occupied_state
     )
 
-    tau_name = select_tau_name(status, inputs, last_occupied_state)
+    tau_name = select_tau_name(
+        status,
+        inputs,
+        last_occupied_state,
+        previous_status=state.status,
+        previous_tau_name=state.tau_name,
+    )
     return RoomState(
         weight=weight,
         target=target_weight(status, config.weights),

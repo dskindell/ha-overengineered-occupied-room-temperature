@@ -608,3 +608,31 @@ async def test_person_with_unusable_location_is_in_no_room(
     fields = {CONF_SOURCE_ATTRIBUTE: attribute} if attribute else {}
     await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area", **fields)])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == []
+
+
+async def test_person_leaving_an_occupied_room_uses_person_fall(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    hass.states.async_set("binary_sensor.kitchen_motion", "on")
+    await setup_instance(
+        hass,
+        [
+            room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}),
+            person("Alex", "sensor.alex_area"),
+        ],
+    )
+    await advance(hass, freezer, 60)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=1e-6)
+
+    hass.states.async_set("sensor.alex_area", "Garage")  # Alex leaves; motion still on
+    await hass.async_block_till_done()
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert (kitchen.attributes["status"], kitchen.attributes["tau_name"]) == (
+        "occupied",
+        "person_fall",
+    )
+    await advance(hass, freezer, 3)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.5 + 0.5 * math.exp(-1), abs=1e-6)
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["tau_name"] == "person_fall"
