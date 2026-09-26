@@ -102,7 +102,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Field | Description | Default |
 |---|---|---|
 | Person rise tau | How fast a room's weight rises when a tracked person arrives. | 3 |
-| Person fall tau | How fast it falls after the last tracked person leaves. Larger keeps a room counted during short trips out. | 3 |
+| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly inactive during that fall (for example while its temperature sensor reconnects after a restart), it finishes the fall at the occupancy rise speed instead. | 3 |
 | Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). | 10 |
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
 | Deactivate tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
