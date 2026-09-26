@@ -187,6 +187,7 @@ class InstanceRuntime:
         self.result = Aggregate(None, 0.0, 0, False)
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
+        self._template_problems: dict[Template, str] = {}
         self._hold = False
         self._listeners: list[Callable[[], None]] = []
 
@@ -241,6 +242,7 @@ class InstanceRuntime:
                 self.hass,
                 [TrackTemplate(template, None) for template in templates],
                 self._async_on_templates,
+                log_fn=self._log_tracker_message,
             )
             entry.async_on_unload(info.async_remove)
             info.async_refresh()
@@ -316,29 +318,48 @@ class InstanceRuntime:
     def _log_template_result(self, template: Template, result: Any) -> None:
         """Log a template result that can't count as true or false.
 
-        Called only when a template's result changes, so each problem is logged
-        once until the result changes again. ``unavailable``/``unknown``/blank are
-        expected while a source entity is down and aren't logged.
+        Logged when the *kind* of result changes (fine → error → unrecognised),
+        not on every new value, so a template returning a stream of odd values
+        warns once. ``unavailable``/``unknown``/blank are expected while a source
+        entity is down; they count as fine and aren't logged.
         """
-        labels = ", ".join(self._template_labels.get(template, []))
         if isinstance(result, TemplateError):
+            kind = "error"
+        elif (
+            result is not None
+            and str(result).strip().lower() not in ("", STATE_UNAVAILABLE, STATE_UNKNOWN)
+            and forgiving_boolean(result, None) is None
+        ):
+            kind = "unrecognised"
+        else:
+            kind = "ok"
+        if self._template_problems.get(template, "ok") == kind:
+            return
+        self._template_problems[template] = kind
+        labels = ", ".join(self._template_labels.get(template, []))
+        if kind == "error":
             _LOGGER.error(
                 "OORT zone %s: %s failed (%s); counting it as false",
                 self.entry.title,
                 labels,
                 result,
             )
-        elif (
-            result is not None
-            and str(result).strip().lower() not in ("", STATE_UNAVAILABLE, STATE_UNKNOWN)
-            and forgiving_boolean(result, None) is None
-        ):
+        elif kind == "unrecognised":
             _LOGGER.warning(
                 "OORT zone %s: %s returned %r, which isn't true or false; counting it as false",
                 self.entry.title,
                 labels,
                 result,
             )
+
+    @staticmethod
+    def _log_tracker_message(level: int, message: str) -> None:
+        """Messages from HA's template tracker.
+
+        Its render errors are already reported by ``_log_template_result`` with the
+        zone and room, so they go to debug; anything else keeps its level.
+        """
+        _LOGGER.log(logging.DEBUG if level >= logging.ERROR else level, message)
 
     # -- inputs ---------------------------------------------------------------
 

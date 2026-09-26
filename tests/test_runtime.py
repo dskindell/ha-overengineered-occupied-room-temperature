@@ -521,8 +521,9 @@ async def test_failing_templates_count_as_not_open_and_not_occupied(
     assert kitchen.attributes["active"] is True  # only a clear "true" means open
     assert kitchen.attributes["occupied"] is False
     assert kitchen.attributes["status"] == "unoccupied"
-    errors = [r for r in caplog.records if r.levelname == "ERROR" and "Kitchen" in r.getMessage()]
-    assert len(errors) == 2, "each failing template is logged once"
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 2, "each failing template is logged once, by OORT only"
+    assert all("Kitchen" in r.getMessage() for r in errors)
 
 
 @pytest.mark.parametrize("result", ["unavailable", "unknown", ""])
@@ -858,3 +859,30 @@ async def test_temperature_sensor_not_rewritten_when_nothing_visible_changes(
     hass.states.async_set("sensor.alex_area", "Kitchen", {"rssi": -70})  # attribute-only
     await hass.async_block_till_done()
     assert hass.states.get(TEMPERATURE).last_updated == before.last_updated
+
+
+async def test_changing_unrecognised_template_result_warns_once(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A template returning a new unrecognised value each time warns only once."""
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.window_battery", "50%")
+    await setup_instance(
+        hass,
+        [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ states('sensor.window_battery') }}"})],
+    )
+    for value in ("49%", "48%", "47%"):
+        hass.states.async_set("sensor.window_battery", value)
+        await hass.async_block_till_done()
+
+    def warnings() -> list[str]:
+        return [r.getMessage() for r in caplog.records if r.levelname == "WARNING" and "OORT" in r.getMessage()]
+
+    assert len(warnings()) == 1
+
+    # Back to a meaningful value, then broken again: that's a new problem, so warn again.
+    hass.states.async_set("sensor.window_battery", "off")
+    await hass.async_block_till_done()
+    hass.states.async_set("sensor.window_battery", "low")
+    await hass.async_block_till_done()
+    assert len(warnings()) == 2
