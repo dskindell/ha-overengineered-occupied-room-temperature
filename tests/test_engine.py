@@ -1,15 +1,15 @@
 """Tests for the pure weighting, smoothing and averaging rules."""
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from itertools import pairwise
 import math
 from types import EllipsisType
 
+import const  # the integration's constants; no Home Assistant imports
 import pytest
 
 from engine import (
     Aggregate,
-    RoomConfig,
     RoomInputs,
     RoomSample,
     RoomState,
@@ -30,7 +30,7 @@ from engine import (
 )
 
 MINUTE = 60.0
-CONFIG = RoomConfig()
+CONFIG = room_config(const.DEFAULTS, {})
 
 
 def inputs(
@@ -157,7 +157,7 @@ class TestPersonLeavesOccupiedRoom:
             assert name is TauName.OCCUPANCY_RISE, previous
 
     def test_person_then_occupied_then_empty(self) -> None:
-        config = RoomConfig(taus=self.taus)
+        config = replace(CONFIG, taus=self.taus)
         state = RoomState(
             weight=1.0,
             target=1.0,
@@ -203,8 +203,10 @@ class TestStepRoom:
         assert state.tau == CONFIG.taus.person_rise
 
     def test_fall_after_person_uses_person_fall_even_if_weights_inverted(self) -> None:
-        config = RoomConfig(
-            taus=Taus(person_fall=2, occupancy_fall=20), weights=Weights(person=0.2, occupied=0.8)
+        config = replace(
+            CONFIG,
+            taus=replace(CONFIG.taus, person_fall=2, occupancy_fall=20),
+            weights=replace(CONFIG.weights, person=0.2, occupied=0.8),
         )
         state = step_room(RoomState(), inputs(person=True), config, 0.0)
         state = step_room(state, inputs(), config, MINUTE)
@@ -292,20 +294,20 @@ class TestEmptyRoomAfterAnOpenPeriod:
     WEIGHTS = Weights(person=1.0, occupied=0.5, base=0.3)
 
     def _after_open(self, minutes: float) -> RoomState:
-        config = RoomConfig(weights=self.WEIGHTS)
+        config = replace(CONFIG, weights=self.WEIGHTS)
         state = run(RoomState(), inputs(person=True), 60)  # a person room at ~1.0
         opened = step_room(state, inputs(active=False, person=True), config, 60 * MINUTE)
         return step_room(opened, inputs(active=False), config, (60 + minutes) * MINUTE)
 
     def test_rises_on_occupancy_rise_after_a_long_open_period(self) -> None:
-        config = RoomConfig(weights=self.WEIGHTS)
+        config = replace(CONFIG, weights=self.WEIGHTS)
         opened = self._after_open(60)  # faded to ~0
         closed = step_room(opened, inputs(), config, 121 * MINUTE)
         assert closed.weight < closed.target
         assert (closed.status, closed.tau_name) == (Status.UNOCCUPIED, TauName.OCCUPANCY_RISE)
 
     def test_still_falls_on_person_fall_after_a_brief_open_period(self) -> None:
-        config = RoomConfig(weights=self.WEIGHTS)
+        config = replace(CONFIG, weights=self.WEIGHTS)
         opened = self._after_open(0.1)  # barely faded from ~1.0
         closed = step_room(opened, inputs(), config, 60.2 * MINUTE)
         assert closed.weight > closed.target
@@ -319,7 +321,7 @@ class TestZeroTauIsInstant:
         weight=1.0, target=1.0, tau=3.0, tau_name=TauName.PERSON_RISE, status=Status.PERSON,
         last_update=0.0, last_known_temperature=70.0, last_seen=0.0,
     )
-    INSTANT = RoomConfig(taus=Taus(deactivate=0.0, dropout=0.0))
+    INSTANT = replace(CONFIG, taus=replace(CONFIG.taus, deactivate=0.0, dropout=0.0))
 
     def test_opened_room_drops_to_zero_at_once(self) -> None:
         state = step_room(self.PERSON, inputs(active=False, person=True), self.INSTANT, 0.0)
@@ -450,11 +452,12 @@ class TestRoomConfig:
 
     def test_setting_keys_match_the_integration(self) -> None:
         """room_config builds keys from field names; they must be the stored keys."""
-        import const  # the integration's constants; no Home Assistant imports
-
-        assert {f"tau_{f.name}" for f in fields(Taus)} == set(const.TAUS)
-        assert {f"w_{f.name}" for f in fields(Weights)} == set(const.WEIGHTS)
-        assert set(self.DEFAULTS) == set(const.DEFAULTS)
+        engine_keys = {f"tau_{f.name}" for f in fields(Taus)} | {
+            f"w_{f.name}" for f in fields(Weights)
+        }
+        assert engine_keys | {"stale_limit"} == set(const.DEFAULTS)
+        assert engine_keys == set(const.ROOM_SETTINGS)
+        assert self.DEFAULTS == const.DEFAULTS
 
 
 class TestStepZone:

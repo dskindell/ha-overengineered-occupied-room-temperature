@@ -1,5 +1,7 @@
 """Constants for Overengineered Occupied-Room Temperature (OORT)."""
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Final
 
 DOMAIN: Final = "overengineered_occupied_room_temperature"
@@ -49,43 +51,82 @@ CONF_VALUE_TYPE: Final = "value_type"
 VALUE_TYPE_AREA_NAME: Final = "area_name"
 VALUE_TYPE_AREA_ID: Final = "area_id"
 
-# Taus that must be > 0; the others allow 0 (= instant).
-TAUS_POSITIVE: Final = (
-    CONF_TAU_PERSON_RISE,
-    CONF_TAU_PERSON_FALL,
-    CONF_TAU_OCCUPANCY_RISE,
-    CONF_TAU_OCCUPANCY_FALL,
-)
-TAUS_ZERO_ALLOWED: Final = (CONF_TAU_DEACTIVATE, CONF_TAU_DROPOUT)
-TAUS: Final = TAUS_POSITIVE + TAUS_ZERO_ALLOWED
-WEIGHTS: Final = (CONF_W_PERSON, CONF_W_OCCUPIED, CONF_W_BASE)
-
-DEFAULTS: Final[dict[str, float]] = {
-    CONF_TAU_PERSON_RISE: 3.0,
-    CONF_TAU_PERSON_FALL: 3.0,
-    CONF_TAU_OCCUPANCY_RISE: 10.0,
-    CONF_TAU_OCCUPANCY_FALL: 8.0,
-    CONF_TAU_DEACTIVATE: 1.0,
-    CONF_TAU_DROPOUT: 5.0,
-    CONF_W_PERSON: 1.0,
-    CONF_W_OCCUPIED: 0.5,
-    CONF_W_BASE: 0.001,
-    CONF_STALE_LIMIT: 5.0,
-}
-
 GRACE_PERIOD_SECONDS: Final = 120
 
 # Stored precision: enough for the thermostat and the weights, few enough
 # digits that settled values stop producing new recorder rows.
 WEIGHT_DECIMALS: Final = 4
 TEMPERATURE_DECIMALS: Final = 1
-# Smallest unoccupied weight: lower values change the output by hundredths of
-# a degree at most, and 0.001 still shows at the stored weight precision.
+UPDATE_INTERVAL_SECONDS: Final = 60
+
+# Limits. Smallest unoccupied weight: lower values change the output by
+# hundredths of a degree at most, and 0.001 still shows at the stored weight
+# precision. Upper limits: weights only matter relative to each other, so
+# 0-1 loses nothing (with MIN_BASE_WEIGHT that still allows 1000:1).
 MIN_BASE_WEIGHT: Final = 0.001
-# Upper limits. Weights only matter relative to each other, so
-# 0-1 loses nothing (with MIN_BASE_WEIGHT that still allows 1000:1) and a weight
-# reads as a fraction.
 MAX_TAU: Final = 1440.0  # minutes (a day)
 MAX_WEIGHT: Final = 1.0
 MAX_STALE_LIMIT: Final = 1440.0  # minutes (a day)
-UPDATE_INTERVAL_SECONDS: Final = 60
+
+
+@dataclass(frozen=True, slots=True)
+class Setting:
+    """A numeric zone setting: its default, its limits and the errors for them.
+
+    To add a setting: add it here, to the engine (``engine.Taus``/``Weights`` use
+    the key without its ``tau_``/``w_`` prefix) and to the translations. Zones saved
+    without it get the default when they load, so they needn't be recreated.
+    """
+
+    key: str
+    default: float
+    minimum: float
+    maximum: float
+    too_small: str
+    """Error key for a value below ``minimum`` (or equal to it, if not allowed)."""
+    too_large: str
+    minimum_allowed: bool = True
+    """Whether ``minimum`` itself is valid (False: must be greater)."""
+    per_room: bool = True
+    """Whether a room can override it."""
+
+
+def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
+    return Setting(
+        key, default, 0.0, MAX_TAU,
+        "tau_negative" if zero_allowed else "tau_not_positive", "tau_too_large",
+        minimum_allowed=zero_allowed,
+    )
+
+
+def _weight(key: str, default: float, minimum: float = 0.0, too_small: str = "weight_negative") -> Setting:
+    return Setting(key, default, minimum, MAX_WEIGHT, too_small, "weight_too_large")
+
+
+SETTINGS: Final = (
+    _tau(CONF_TAU_PERSON_RISE, 3.0, zero_allowed=False),
+    _tau(CONF_TAU_PERSON_FALL, 3.0, zero_allowed=False),
+    _tau(CONF_TAU_OCCUPANCY_RISE, 10.0, zero_allowed=False),
+    _tau(CONF_TAU_OCCUPANCY_FALL, 8.0, zero_allowed=False),
+    _tau(CONF_TAU_DEACTIVATE, 1.0, zero_allowed=True),  # 0 = instant
+    _tau(CONF_TAU_DROPOUT, 5.0, zero_allowed=True),
+    _weight(CONF_W_PERSON, 1.0),
+    _weight(CONF_W_OCCUPIED, 0.5),
+    _weight(CONF_W_BASE, 0.001, MIN_BASE_WEIGHT, "base_weight_too_small"),
+    Setting(
+        CONF_STALE_LIMIT, 5.0, 0.0, MAX_STALE_LIMIT,
+        "stale_limit_not_positive", "stale_limit_too_large",
+        minimum_allowed=False, per_room=False,
+    ),
+)
+DEFAULTS: Final[dict[str, float]] = {setting.key: setting.default for setting in SETTINGS}
+ROOM_SETTINGS: Final = tuple(setting.key for setting in SETTINGS if setting.per_room)
+
+
+def zone_defaults(stored: Mapping[str, float]) -> dict[str, float]:
+    """A zone's settings: stored values, with the default for any not stored.
+
+    Keys no longer known are dropped, so settings can be added or removed
+    without recreating zones.
+    """
+    return {key: stored.get(key, default) for key, default in DEFAULTS.items()}

@@ -59,6 +59,7 @@ from .const import (
     GRACE_PERIOD_SECONDS,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
+    zone_defaults,
 )
 from .engine import (
     Aggregate,
@@ -188,7 +189,8 @@ class InstanceRuntime:
         self.entry = entry
         areas = ar.async_get(hass)
         options = entry.options
-        defaults = options[CONF_DEFAULTS]
+        # Settings added since the zone was saved get their defaults.
+        defaults = zone_defaults(options.get(CONF_DEFAULTS, {}))
         self.rooms: dict[str, Room] = {}
         for area_id, data in options[CONF_ROOMS].items():
             area = areas.async_get_area(area_id)

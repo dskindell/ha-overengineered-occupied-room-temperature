@@ -1394,3 +1394,30 @@ async def test_dropped_out_room_leaves_the_output_at_once_with_dropout_tau_0(
     await hass.async_block_till_done()
     assert weight(hass, KITCHEN_WEIGHT) == 0.0
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Settings added or removed
+# ---------------------------------------------------------------------------
+
+
+async def test_zone_saved_without_a_setting_loads_with_its_default(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    areas = ar.async_get(hass)
+    areas.async_create("Kitchen")
+    options = zone_options([room("kitchen")])
+    stored = {key: value for key, value in options[CONF_DEFAULTS].items() if key != "w_base"}
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Home",
+        version=1,
+        data={CONF_NAME: "Home", "temperature_unit": "°C"},
+        options={**options, CONF_DEFAULTS: {**stored, "retired_setting": 7}},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await advance(hass, freezer, 120)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(DEFAULTS["w_base"], abs=5e-5)

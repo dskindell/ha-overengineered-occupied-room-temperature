@@ -11,7 +11,7 @@ are in minutes, matching the configuration.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, fields
 from enum import StrEnum
 import math
 
@@ -38,32 +38,36 @@ class TauName(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Taus:
-    """Time constants in minutes. A tau of 0 means the target is reached immediately."""
+    """Time constants in minutes. A tau of 0 means the target is reached immediately.
 
-    person_rise: float = 3.0
-    person_fall: float = 3.0
-    occupancy_rise: float = 10.0
-    occupancy_fall: float = 8.0
-    deactivate: float = 1.0
-    dropout: float = 5.0
+    Defaults and limits live in the integration's settings table (``const.SETTINGS``,
+    keys ``tau_<field>``).
+    """
+
+    person_rise: float
+    person_fall: float
+    occupancy_rise: float
+    occupancy_fall: float
+    deactivate: float
+    dropout: float
 
 
 @dataclass(frozen=True, slots=True)
 class Weights:
-    """Target weights for each status (inactive is always 0)."""
+    """Target weights for each status (inactive is always 0); keys ``w_<field>``."""
 
-    person: float = 1.0
-    occupied: float = 0.5
-    base: float = 0.001
+    person: float
+    occupied: float
+    base: float
 
 
 @dataclass(frozen=True, slots=True)
 class RoomConfig:
-    """A room's effective settings: its overrides merged over the instance defaults."""
+    """A room's effective settings: its overrides merged over the zone defaults."""
 
-    taus: Taus = field(default_factory=Taus)
-    weights: Weights = field(default_factory=Weights)
-    stale_limit: float = 5.0
+    taus: Taus
+    weights: Weights
+    stale_limit: float
 
 
 @dataclass(frozen=True, slots=True)

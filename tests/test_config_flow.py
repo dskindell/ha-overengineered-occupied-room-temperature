@@ -38,6 +38,8 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_VALUE_TYPE,
     DEFAULTS,
     DOMAIN,
+    SETTINGS,
+    Setting,
 )
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
@@ -565,6 +567,36 @@ async def test_configure_defaults_prefilled_and_saved(hass: HomeAssistant) -> No
     await flow.menu("save")
     assert entry.options[CONF_DEFAULTS]["w_person"] == 0.9
     assert entry.options[CONF_ROOMS] == {"kitchen": room_data("kitchen")}
+
+
+async def test_configure_fills_in_settings_missing_from_an_older_zone(hass: HomeAssistant) -> None:
+    """A setting added since the zone was saved shows its default; unknown keys go."""
+    entry = zone_entry(hass)
+    stored = {key: value for key, value in DEFAULTS.items() if key != "tau_dropout"}
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_DEFAULTS: {**stored, "retired_setting": 7}}
+    )
+    flow = await start_configure(hass, entry)
+    await flow.menu(CONF_DEFAULTS)
+    suggested = {
+        str(key): key.description["suggested_value"]
+        for key in flow.result["data_schema"].schema
+        if key.description
+    }
+    assert suggested["tau_dropout"] == DEFAULTS["tau_dropout"]
+    await flow.submit(dict(DEFAULTS))
+    await flow.menu("save")
+    assert entry.options[CONF_DEFAULTS] == DEFAULTS
+
+
+@pytest.mark.parametrize("setting", SETTINGS, ids=lambda setting: setting.key)
+def test_every_setting_is_checked_against_its_limits(setting: Setting) -> None:
+    assert validate_settings({setting.key: setting.default}) is None
+    assert validate_settings({setting.key: setting.maximum}) is None
+    assert validate_settings({setting.key: setting.maximum * 1.01}) == setting.too_large
+    at_minimum = validate_settings({setting.key: setting.minimum})
+    assert at_minimum == (None if setting.minimum_allowed else setting.too_small)
+    assert validate_settings({setting.key: setting.minimum - 0.0001}) == setting.too_small
 
 
 async def test_closing_configure_without_saving_changes_nothing(hass: HomeAssistant) -> None:

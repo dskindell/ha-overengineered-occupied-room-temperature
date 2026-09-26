@@ -45,67 +45,50 @@ from .const import (
     CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
-    CONF_STALE_LIMIT,
     CONF_TEMPERATURE_SENSOR,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
-    CONF_W_BASE,
     DEFAULTS,
     DOMAIN,
-    MAX_STALE_LIMIT,
-    MAX_TAU,
-    MAX_WEIGHT,
-    MIN_BASE_WEIGHT,
-    TAUS,
-    TAUS_POSITIVE,
-    TAUS_ZERO_ALLOWED,
+    ROOM_SETTINGS,
+    SETTINGS,
     VALUE_TYPE_AREA_ID,
     VALUE_TYPE_AREA_NAME,
-    WEIGHTS,
+    zone_defaults,
 )
 
-ZONE_SETTINGS = (*TAUS, *WEIGHTS, CONF_STALE_LIMIT)
-ROOM_OVERRIDES = (*TAUS, *WEIGHTS)
-MAXIMUM = {
-    **dict.fromkeys(TAUS, MAX_TAU),
-    **dict.fromkeys(WEIGHTS, MAX_WEIGHT),
-    CONF_STALE_LIMIT: MAX_STALE_LIMIT,
-}
+SETTINGS_BY_KEY = {setting.key: setting for setting in SETTINGS}
 
 
 def _number(key: str) -> selector.NumberSelector:
+    # min=0 rather than the setting's minimum, so a too-small unoccupied weight
+    # gets its explanatory error from validate_settings.
     return selector.NumberSelector(
         selector.NumberSelectorConfig(
-            min=0, max=MAXIMUM[key], step="any", mode=selector.NumberSelectorMode.BOX
+            min=0,
+            max=SETTINGS_BY_KEY[key].maximum,
+            step="any",
+            mode=selector.NumberSelectorMode.BOX,
         )
     )
 
 
 def validate_settings(values: Mapping[str, Any]) -> str | None:
-    """Return an error key if any tau, weight or stale limit present in ``values`` is invalid.
+    """Return an error key if any setting present in ``values`` is out of its limits.
 
     The form's number fields already reject negatives and values over the limits;
-    this adds the "> 0" rules and guards data that didn't come through the form.
-    NaN passes every comparison, so it's rejected first.
+    this adds the other minimums and guards data that didn't come through the
+    form. NaN passes every comparison, so it's rejected first.
     """
-    if any(not math.isfinite(values[key]) for key in MAXIMUM if key in values):
-        return "value_not_finite"
-    if any(values[key] > MAX_TAU for key in TAUS if key in values):
-        return "tau_too_large"
-    if any(values[key] > MAX_WEIGHT for key in WEIGHTS if key in values):
-        return "weight_too_large"
-    if CONF_STALE_LIMIT in values and values[CONF_STALE_LIMIT] > MAX_STALE_LIMIT:
-        return "stale_limit_too_large"
-    if any(values[key] <= 0 for key in TAUS_POSITIVE if key in values):
-        return "tau_not_positive"
-    if any(values[key] < 0 for key in TAUS_ZERO_ALLOWED if key in values):
-        return "tau_negative"
-    if any(values[key] < 0 for key in WEIGHTS if key in values):
-        return "weight_negative"
-    if CONF_W_BASE in values and values[CONF_W_BASE] < MIN_BASE_WEIGHT:
-        return "base_weight_too_small"
-    if CONF_STALE_LIMIT in values and values[CONF_STALE_LIMIT] <= 0:
-        return "stale_limit_not_positive"
+    present = [(setting, values[setting.key]) for setting in SETTINGS if setting.key in values]
+    for _, value in present:
+        if not math.isfinite(value):
+            return "value_not_finite"
+    for setting, value in present:
+        if value > setting.maximum:
+            return setting.too_large
+        if value < setting.minimum or (value == setting.minimum and not setting.minimum_allowed):
+            return setting.too_small
     return None
 
 
@@ -114,7 +97,7 @@ def _without_empty(values: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value not in (None, "", [])}
 
 
-DEFAULTS_SCHEMA = vol.Schema({vol.Required(key): _number(key) for key in ZONE_SETTINGS})
+DEFAULTS_SCHEMA = vol.Schema({vol.Required(key): _number(key) for key in DEFAULTS})
 
 NAME_SCHEMA = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()})
 
@@ -152,7 +135,7 @@ def _room_schema(*, new: bool) -> vol.Schema:
             ),
             vol.Optional(CONF_OPENING_TEMPLATE): selector.TemplateSelector(),
             vol.Required(CONF_OVERRIDES): section(
-                vol.Schema({vol.Optional(key): _number(key) for key in ROOM_OVERRIDES}),
+                vol.Schema({vol.Optional(key): _number(key) for key in ROOM_SETTINGS}),
                 {"collapsed": True},
             ),
         }
@@ -233,7 +216,8 @@ class ZoneMenu(ConfigEntryBaseFlow):
 
     def _load(self, options: Mapping[str, Any]) -> None:
         options = deepcopy(dict(options))
-        self._defaults = options.get(CONF_DEFAULTS, dict(DEFAULTS))
+        # Settings added since the zone was saved get their defaults.
+        self._defaults = zone_defaults(options.get(CONF_DEFAULTS, {}))
         self._rooms = options.get(CONF_ROOMS, {})
         self._people = options.get(CONF_PEOPLE, {})
 
