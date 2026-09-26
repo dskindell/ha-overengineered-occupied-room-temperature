@@ -1,7 +1,9 @@
 """Tests for the pure weighting, smoothing and averaging rules."""
 
+from dataclasses import fields
 from itertools import pairwise
 import math
+from types import EllipsisType
 
 import pytest
 
@@ -9,6 +11,7 @@ from engine import (
     Aggregate,
     RoomConfig,
     RoomInputs,
+    RoomSample,
     RoomState,
     Status,
     TauName,
@@ -17,10 +20,12 @@ from engine import (
     aggregate,
     approach,
     fallback_epsilon,
+    room_config,
     room_status,
     select_tau,
     select_tau_name,
     step_room,
+    step_zone,
     target_weight,
 )
 
@@ -335,13 +340,24 @@ class TestZeroTauIsInstant:
         assert state.weight == 1.0
 
 
+def sample(
+    weight: float,
+    usable: float | None,
+    current: float | None | EllipsisType = ...,
+    *,
+    closed: bool = True,
+) -> RoomSample:
+    """A stepped room for ``aggregate``; its current reading defaults to ``usable``."""
+    return RoomSample(weight, usable, usable if current is ... else current, closed)
+
+
 class TestAggregate:
     def test_epsilon_is_one_percent_of_smallest_base(self) -> None:
         assert fallback_epsilon([0.001, 0.002]) == pytest.approx(0.00001)
 
     def test_weighted_average_with_negligible_fallback(self) -> None:
         eps = fallback_epsilon([0.001])
-        result = aggregate([(1.0, 66.0), (0.001, 72.0)], [66.0, 72.0], eps)
+        result = aggregate([sample(1.0, 66.0), sample(0.001, 72.0)], eps)
         plain_weighted = (66.0 * 1.0 + 72.0 * 0.001) / 1.001
         assert result.temperature == pytest.approx(plain_weighted, abs=1e-3)
         assert result.total_weight == pytest.approx(1.001)
@@ -350,16 +366,19 @@ class TestAggregate:
 
     def test_empty_house_is_plain_average(self) -> None:
         eps = fallback_epsilon([0.001])
-        result = aggregate([(0.001, 68.0), (0.001, 70.0), (0.001, 72.0)], [68, 70, 72], eps)
+        result = aggregate([sample(0.001, 68.0), sample(0.001, 70.0), sample(0.001, 72.0)], eps)
         assert result.temperature == pytest.approx(70.0)
 
     def test_all_rooms_fading_glides_into_plain_average(self) -> None:
-        # One occupied cold room and one warm room, both inactive and fading together.
+        # One occupied cold room and one warm room, both open and fading together.
         eps = fallback_epsilon([0.001])
         readings = []
         for minutes in range(0, 31):
             fade = math.exp(-minutes)  # deactivate tau = 1 min
-            result = aggregate([(1.0 * fade, 64.0), (0.001 * fade, 74.0)], [64.0, 74.0], eps)
+            result = aggregate(
+                [sample(1.0 * fade, 64.0, closed=False), sample(0.001 * fade, 74.0, closed=False)],
+                eps,
+            )
             readings.append(result.temperature)
         assert readings[0] == pytest.approx(64.0, abs=0.05)
         assert readings[-1] == pytest.approx(69.0, abs=0.01)
@@ -369,47 +388,104 @@ class TestAggregate:
 
     def test_fallback_flag(self) -> None:
         eps = 0.00001
-        assert aggregate([(0.000001, 70.0)], [70.0], eps).fallback
-        assert not aggregate([(0.001, 70.0)], [70.0], eps).fallback
+        assert aggregate([sample(0.000001, 70.0)], eps).fallback
+        assert not aggregate([sample(0.001, 70.0)], eps).fallback
 
     def test_no_current_readings_falls_back_on_recent_readings(self) -> None:
-        result = aggregate([(0.5, 68.0)], [], 0.00001)
+        result = aggregate([sample(0.5, 68.0, None)], 0.00001)
         assert result.temperature == pytest.approx(68.0)
         assert not result.fallback
 
     def test_all_weights_zero_and_no_current_readings_uses_recent_readings(self) -> None:
         """For example, dropout tau 0 during a total sensor outage, before the stale limit."""
-        result = aggregate([(0.0, 20.0), (0.0, 22.0)], [], 0.00001)
+        result = aggregate([sample(0.0, 20.0, None), sample(0.0, 22.0, None)], 0.00001)
         assert result.temperature == pytest.approx(21.0)
         assert result.fallback
         assert result.contributing_rooms == 2
 
     def test_fallback_prefers_closed_rooms(self) -> None:
         """An open room's reading is used only if no closed room has one."""
-        result = aggregate(
-            [(0.0, 20.0), (0.0, 12.0)], [20.0, 12.0], 0.00001, closed_current=[20.0]
-        )
+        result = aggregate([sample(0.0, 20.0), sample(0.0, 12.0, closed=False)], 0.00001)
         assert result.temperature == pytest.approx(20.0)
         assert result.fallback
 
     def test_fallback_prefers_a_closed_rooms_recent_reading_over_an_open_live_one(self) -> None:
         result = aggregate(
-            [(0.0, 20.0), (0.0, 12.0)], [12.0], 0.00001, closed_current=[], closed_usable=[20.0]
+            [sample(0.0, 20.0, None), sample(0.0, 12.0, closed=False)], 0.00001
         )
         assert result.temperature == pytest.approx(20.0)
 
     def test_fallback_uses_open_rooms_when_every_room_is_open(self) -> None:
         result = aggregate(
-            [(0.0, 20.0), (0.0, 12.0)], [20.0, 12.0], 0.00001, closed_current=[], closed_usable=[]
+            [sample(0.0, 20.0, closed=False), sample(0.0, 12.0, closed=False)], 0.00001
         )
         assert result.temperature == pytest.approx(16.0)
 
     def test_stale_rooms_are_not_in_the_fallback(self) -> None:
-        # usable_temperature is None once stale, so only the recent room counts.
-        result = aggregate([(0.0, 20.0), (0.0, None)], [], 0.00001)
+        # usable is None once stale, so only the recent room counts.
+        result = aggregate([sample(0.0, 20.0, None), sample(0.0, None, None)], 0.00001)
         assert result.temperature == pytest.approx(20.0)
 
     def test_nothing_to_average_is_unavailable(self) -> None:
-        assert aggregate([(0.5, None)], [], 0.00001) == Aggregate(
+        assert aggregate([sample(0.5, None, None)], 0.00001) == Aggregate(
             temperature=None, total_weight=0.0, contributing_rooms=0, fallback=False
         )
+
+
+class TestRoomConfig:
+    DEFAULTS = {
+        "tau_person_rise": 3.0, "tau_person_fall": 3.0, "tau_occupancy_rise": 10.0,
+        "tau_occupancy_fall": 8.0, "tau_deactivate": 1.0, "tau_dropout": 5.0,
+        "w_person": 1.0, "w_occupied": 0.5, "w_base": 0.001, "stale_limit": 5.0,
+    }
+
+    def test_overrides_replace_defaults(self) -> None:
+        config = room_config(self.DEFAULTS, {"tau_person_fall": 1.0, "w_occupied": 0.8})
+        assert config.taus == Taus(3.0, 1.0, 10.0, 8.0, 1.0, 5.0)
+        assert config.weights == Weights(1.0, 0.8, 0.001)
+        assert config.stale_limit == 5.0
+
+    def test_stale_limit_is_zone_wide(self) -> None:
+        assert room_config(self.DEFAULTS, {"stale_limit": 60.0}).stale_limit == 5.0
+
+    def test_setting_keys_match_the_integration(self) -> None:
+        """room_config builds keys from field names; they must be the stored keys."""
+        import const  # the integration's constants; no Home Assistant imports
+
+        assert {f"tau_{f.name}" for f in fields(Taus)} == set(const.TAUS)
+        assert {f"w_{f.name}" for f in fields(Weights)} == set(const.WEIGHTS)
+        assert set(self.DEFAULTS) == set(const.DEFAULTS)
+
+
+class TestStepZone:
+    def test_steps_every_room_and_averages_them(self) -> None:
+        person = (RoomState(), inputs(person=True, temperature=20.0), CONFIG)
+        empty = (RoomState(), inputs(temperature=24.0), CONFIG)
+        step = step_zone({"kitchen": person, "office": empty}, 0.0)
+        step = step_zone(
+            {
+                "kitchen": (step.rooms["kitchen"], person[1], CONFIG),
+                "office": (step.rooms["office"], empty[1], CONFIG),
+            },
+            3 * MINUTE,
+        )
+        kitchen, office = step.rooms["kitchen"], step.rooms["office"]
+        assert kitchen.weight == pytest.approx(1 - math.exp(-1))
+        expected = aggregate(
+            [sample(kitchen.weight, 20.0), sample(office.weight, 24.0)], fallback_epsilon([0.001])
+        )
+        assert step.result == expected
+
+    def test_open_room_is_not_preferred_for_the_fallback(self) -> None:
+        closed = (RoomState(), inputs(temperature=20.0), CONFIG)
+        opened = (RoomState(), inputs(active=False, temperature=12.0), CONFIG)
+        step = step_zone({"a": closed, "b": opened}, 0.0)
+        assert step.result.temperature == pytest.approx(20.0)
+
+    def test_hold_freezes_weights(self) -> None:
+        state = RoomState(weight=0.4, target=0.4, tau=3.0, last_update=0.0)
+        step = step_zone({"a": (state, inputs(person=True), CONFIG)}, 10 * MINUTE, hold=True)
+        assert step.rooms["a"].weight == 0.4
+
+    def test_no_rooms(self) -> None:
+        assert step_zone({}, 0.0).result.temperature is None

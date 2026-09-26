@@ -10,8 +10,8 @@ are in minutes, matching the configuration.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 import math
 
@@ -279,48 +279,46 @@ class Aggregate:
     fallback: bool
 
 
-def aggregate(
-    rooms: Iterable[tuple[float, float | None]],
-    current_temperatures: Iterable[float],
-    epsilon: float,
-    *,
-    closed_current: Iterable[float] | None = None,
-    closed_usable: Iterable[float] | None = None,
-) -> Aggregate:
+@dataclass(frozen=True, slots=True)
+class RoomSample:
+    """One room's part in the zone average, after it has been stepped."""
+
+    weight: float
+    usable: float | None
+    """Last known reading unless it has gone stale (``RoomState.usable_temperature``)."""
+    current: float | None
+    """This update's reading, or None if the sensor is unusable (``RoomInputs.temperature``)."""
+    closed: bool
+    """Not open (``RoomInputs.active``); preferred for the plain average."""
+
+
+def aggregate(samples: Iterable[RoomSample], epsilon: float) -> Aggregate:
     """Blend the rooms' weighted average with a plain-average fallback.
 
-    ``rooms`` holds each room's ``(weight, usable_temperature)``;
-    ``current_temperatures`` holds every room's current valid reading, whether
-    or not the room is active. The plain average always takes part with weight
-    ``epsilon``: negligible while any room is active, and dominant as every
-    room fades toward 0. With no current readings at all (a total sensor
-    outage), the plain average uses the rooms' usable last readings instead, so
-    the output holds until they go stale.
+    Rooms with a usable reading are averaged by weight. The plain average always
+    takes part with weight ``epsilon``: negligible while any room has weight, and
+    dominant as every room fades toward 0. It uses the first of these that
+    has any readings:
 
-    Rooms that aren't open are preferred for the plain average: closed rooms'
-    current readings, then their usable last readings, and only then open rooms'
-    current readings or any usable reading. ``closed_current`` / ``closed_usable``
-    are those closed rooms' values; when omitted, no preference is applied.
+    1. closed rooms' current readings, then 2. their usable last readings;
+    3. any room's current readings, then 4. any usable last readings — so during a
+       total sensor outage the output holds until the readings go stale.
     """
-    weighted_sum = 0.0
-    total_weight = 0.0
-    contributing_rooms = 0
-    usable: list[float] = []
-    for weight, temperature in rooms:
-        if temperature is None:
-            continue
-        usable.append(temperature)
-        weighted_sum += temperature * weight
-        total_weight += weight
-        contributing_rooms += 1
+    samples = list(samples)
+    contributing = [s for s in samples if s.usable is not None]
+    weighted_sum = sum(s.weight * s.usable for s in contributing if s.usable is not None)
+    total_weight = sum(s.weight for s in contributing)
 
-    numerator, denominator = weighted_sum, total_weight
+    def readings(values: Iterable[float | None]) -> list[float]:
+        return [value for value in values if value is not None]
+
     plain = (
-        list(closed_current or [])
-        or list(closed_usable or [])
-        or list(current_temperatures)
-        or usable
+        readings(s.current for s in samples if s.closed)
+        or readings(s.usable for s in samples if s.closed)
+        or readings(s.current for s in samples)
+        or readings(s.usable for s in samples)
     )
+    numerator, denominator = weighted_sum, total_weight
     if plain:
         numerator += epsilon * (sum(plain) / len(plain))
         denominator += epsilon
@@ -328,6 +326,65 @@ def aggregate(
     return Aggregate(
         temperature=numerator / denominator if denominator > 0 else None,
         total_weight=total_weight,
-        contributing_rooms=contributing_rooms,
+        contributing_rooms=len(contributing),
         fallback=bool(plain) and epsilon > total_weight,
     )
+
+
+def room_config(defaults: Mapping[str, float], overrides: Mapping[str, float]) -> RoomConfig:
+    """A room's effective settings: its overrides merged over the zone defaults.
+
+    Setting keys are the field names with a prefix: ``tau_<Taus field>`` and
+    ``w_<Weights field>``; ``stale_limit`` is zone-wide, so it's read from the
+    defaults only.
+    """
+    values = {**defaults, **overrides}
+    return RoomConfig(
+        taus=Taus(**{f.name: values[f"tau_{f.name}"] for f in fields(Taus)}),
+        weights=Weights(**{f.name: values[f"w_{f.name}"] for f in fields(Weights)}),
+        stale_limit=defaults["stale_limit"],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ZoneStep:
+    """The result of stepping every room of a zone to one moment."""
+
+    rooms: dict[str, RoomState]
+    result: Aggregate
+
+
+def step_zone(
+    rooms: Mapping[str, tuple[RoomState, RoomInputs, RoomConfig]],
+    now: float,
+    *,
+    hold: bool = False,
+) -> ZoneStep:
+    """Advance every room to ``now`` and compute the zone's weighted temperature.
+
+    ``rooms`` maps a room's key to its previous state, its inputs now and its
+    settings. This is the whole calculation, free of Home Assistant, so recorded
+    inputs can be replayed through it (e.g. to tune the taus).
+    """
+    states = {
+        key: step_room(state, inputs, config, now, hold=hold)
+        for key, (state, inputs, config) in rooms.items()
+    }
+    epsilon = (
+        fallback_epsilon(config.weights.base for _, _, config in rooms.values())
+        if rooms
+        else 0.0
+    )
+    result = aggregate(
+        (
+            RoomSample(
+                weight=states[key].weight,
+                usable=states[key].usable_temperature,
+                current=inputs.temperature,
+                closed=inputs.active,
+            )
+            for key, (_, inputs, _) in rooms.items()
+        ),
+        epsilon,
+    )
+    return ZoneStep(states, result)

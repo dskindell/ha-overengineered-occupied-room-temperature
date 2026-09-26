@@ -52,36 +52,23 @@ from .const import (
     CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
     CONF_SOURCE_ENTITY,
-    CONF_STALE_LIMIT,
-    CONF_TAU_DEACTIVATE,
-    CONF_TAU_DROPOUT,
-    CONF_TAU_OCCUPANCY_FALL,
-    CONF_TAU_OCCUPANCY_RISE,
-    CONF_TAU_PERSON_FALL,
-    CONF_TAU_PERSON_RISE,
     CONF_TEMPERATURE_SENSOR,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
-    CONF_W_BASE,
-    CONF_W_OCCUPIED,
-    CONF_W_PERSON,
     DOMAIN,
     GRACE_PERIOD_SECONDS,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
 )
 from .engine import (
-    Status,
-    TauName,
     Aggregate,
     RoomConfig,
     RoomInputs,
     RoomState,
-    Taus,
-    Weights,
-    aggregate,
-    fallback_epsilon,
-    step_room,
+    Status,
+    TauName,
+    room_config,
+    step_zone,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -136,27 +123,6 @@ class Person:
     source_entity: str
     source_attribute: str | None
     by_area_id: bool
-
-
-def _room_config(defaults: Mapping[str, Any], overrides: Mapping[str, Any]) -> RoomConfig:
-    """A room's effective settings: its overrides merged over the instance defaults."""
-    values = {**defaults, **overrides}
-    return RoomConfig(
-        taus=Taus(
-            person_rise=values[CONF_TAU_PERSON_RISE],
-            person_fall=values[CONF_TAU_PERSON_FALL],
-            occupancy_rise=values[CONF_TAU_OCCUPANCY_RISE],
-            occupancy_fall=values[CONF_TAU_OCCUPANCY_FALL],
-            deactivate=values[CONF_TAU_DEACTIVATE],
-            dropout=values[CONF_TAU_DROPOUT],
-        ),
-        weights=Weights(
-            person=values[CONF_W_PERSON],
-            occupied=values[CONF_W_OCCUPIED],
-            base=values[CONF_W_BASE],
-        ),
-        stale_limit=defaults[CONF_STALE_LIMIT],
-    )
 
 
 def room_unique_id(entry: ConfigEntry, area_id: str) -> str:
@@ -234,7 +200,7 @@ class InstanceRuntime:
                 occupancy_template=self._template(data.get(CONF_OCCUPANCY_TEMPLATE)),
                 opening_sensors=list(data.get(CONF_OPENING_SENSORS, [])),
                 opening_template=self._template(data.get(CONF_OPENING_TEMPLATE)),
-                config=_room_config(defaults, data.get(CONF_OVERRIDES, {})),
+                config=room_config(defaults, data.get(CONF_OVERRIDES, {})),
             )
         self.people: list[Person] = [
             Person(
@@ -245,11 +211,6 @@ class InstanceRuntime:
             )
             for data in options[CONF_PEOPLE].values()
         ]
-        self.epsilon = (
-            fallback_epsilon(room.config.weights.base for room in self.rooms.values())
-            if self.rooms
-            else 0.0
-        )
         self.result = Aggregate(None, 0.0, 0, False)
         # True when this update came from the timer/startup/grace end, or any room's
         # status or inputs changed: the Temperature sensor then refreshes its
@@ -542,14 +503,12 @@ class InstanceRuntime:
             if (area_id := self._person_area(person)) is not None:
                 people_by_area.setdefault(area_id, []).append(person.name)
 
-        current_temperatures: list[float] = []
+        inputs: dict[str, RoomInputs] = {}
+        before: dict[str, tuple[Any, ...]] = {}
         for room in self.rooms.values():
-            before = _signature(room)
-            temperature = self._temperature(room.temperature_sensor)
-            if temperature is not None:
-                current_temperatures.append(temperature)
+            before[room.area_id] = _signature(room)
             room.people = people_by_area.get(room.area_id, [])
-            room.inputs = RoomInputs(
+            room.inputs = inputs[room.area_id] = RoomInputs(
                 active=not (
                     self._any_on(room.opening_sensors)
                     or self._template_true(room.opening_template)
@@ -557,30 +516,22 @@ class InstanceRuntime:
                 person_present=bool(room.people),
                 occupied=self._any_on(room.occupancy_sensors)
                 or self._template_true(room.occupancy_template),
-                temperature=temperature,
+                temperature=self._temperature(room.temperature_sensor),
             )
-            room.state = step_room(room.state, room.inputs, room.config, now, hold=self._hold)
-            room.write_pending = write_weights or _signature(room) != before
-        self.write_all = any(room.write_pending for room in self.rooms.values())
 
-        closed = [
-            room for room in self.rooms.values() if room.inputs is not None and room.inputs.active
-        ]
-        self.result = aggregate(
-            ((room.state.weight, room.state.usable_temperature) for room in self.rooms.values()),
-            current_temperatures,
-            self.epsilon,
-            closed_current=[
-                room.inputs.temperature
-                for room in closed
-                if room.inputs is not None and room.inputs.temperature is not None
-            ],
-            closed_usable=[
-                room.state.usable_temperature
-                for room in closed
-                if room.state.usable_temperature is not None
-            ],
+        step = step_zone(
+            {
+                area_id: (room.state, inputs[area_id], room.config)
+                for area_id, room in self.rooms.items()
+            },
+            now,
+            hold=self._hold,
         )
+        self.result = step.result
+        for area_id, room in self.rooms.items():
+            room.state = step.rooms[area_id]
+            room.write_pending = write_weights or _signature(room) != before[area_id]
+        self.write_all = any(room.write_pending for room in self.rooms.values())
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's
             # DataUpdateCoordinator does).
