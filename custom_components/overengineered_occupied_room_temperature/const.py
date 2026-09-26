@@ -37,7 +37,8 @@ CONF_AREA_ID: Final = "area_id"
 CONF_TEMPERATURE_SENSOR: Final = "temperature_sensor"
 CONF_OCCUPANCY_SENSORS: Final = "occupancy_sensors"
 CONF_OCCUPANCY_TEMPLATE: Final = "occupancy_template"
-CONF_ACTIVE_TEMPLATE: Final = "active_template"
+CONF_OPENING_SENSORS: Final = "opening_sensors"
+CONF_OPENING_TEMPLATE: Final = "opening_template"
 CONF_OVERRIDES: Final = "overrides"
 
 # Person data (options[CONF_PEOPLE][person_id]).
@@ -68,7 +69,7 @@ DEFAULTS: Final[dict[str, float]] = {
     CONF_W_PERSON: 1.0,
     CONF_W_OCCUPIED: 0.5,
     CONF_W_BASE: 0.001,
-    CONF_STALE_LIMIT: 60.0,
+    CONF_STALE_LIMIT: 15.0,
 }
 
 GRACE_PERIOD_SECONDS: Final = 120

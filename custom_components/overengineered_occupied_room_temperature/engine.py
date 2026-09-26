@@ -63,7 +63,7 @@ class RoomConfig:
 
     taus: Taus = field(default_factory=Taus)
     weights: Weights = field(default_factory=Weights)
-    stale_limit: float = 60.0
+    stale_limit: float = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,27 +267,31 @@ def aggregate(
     ``current_temperatures`` holds every room's current valid reading, whether
     or not the room is active. The plain average always takes part with weight
     ``epsilon``: negligible while any room is active, and dominant as every
-    room fades toward 0.
+    room fades toward 0. With no current readings at all (a total sensor
+    outage), the plain average uses the rooms' usable last readings instead, so
+    the output holds until they go stale.
     """
     weighted_sum = 0.0
     total_weight = 0.0
     contributing_rooms = 0
+    usable: list[float] = []
     for weight, temperature in rooms:
         if temperature is None:
             continue
+        usable.append(temperature)
         weighted_sum += temperature * weight
         total_weight += weight
         contributing_rooms += 1
 
     numerator, denominator = weighted_sum, total_weight
-    current = list(current_temperatures)
-    if current:
-        numerator += epsilon * (sum(current) / len(current))
+    plain = list(current_temperatures) or usable
+    if plain:
+        numerator += epsilon * (sum(plain) / len(plain))
         denominator += epsilon
 
     return Aggregate(
         temperature=numerator / denominator if denominator > 0 else None,
         total_weight=total_weight,
         contributing_rooms=contributing_rooms,
-        fallback=bool(current) and epsilon > total_weight,
+        fallback=bool(plain) and epsilon > total_weight,
     )

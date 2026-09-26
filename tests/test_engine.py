@@ -228,10 +228,11 @@ class TestStepRoom:
         assert state.dropout_since == MINUTE
         assert state.usable_temperature == 68.0
 
-        state = step_room(state, inputs(temperature=None), CONFIG, 61 * MINUTE)
-        assert not state.stale  # exactly 60 minutes out
+        limit = CONFIG.stale_limit * MINUTE
+        state = step_room(state, inputs(temperature=None), CONFIG, MINUTE + limit)
+        assert not state.stale  # exactly at the stale limit
         assert state.dropout_since == MINUTE
-        state = step_room(state, inputs(temperature=None), CONFIG, 61 * MINUTE + 1)
+        state = step_room(state, inputs(temperature=None), CONFIG, MINUTE + limit + 1)
         assert state.stale
         assert state.usable_temperature is None
 
@@ -296,10 +297,22 @@ class TestAggregate:
         assert aggregate([(0.000001, 70.0)], [70.0], eps).fallback
         assert not aggregate([(0.001, 70.0)], [70.0], eps).fallback
 
-    def test_no_current_readings_omits_fallback_term(self) -> None:
+    def test_no_current_readings_falls_back_on_recent_readings(self) -> None:
         result = aggregate([(0.5, 68.0)], [], 0.00001)
         assert result.temperature == pytest.approx(68.0)
         assert not result.fallback
+
+    def test_all_weights_zero_and_no_current_readings_uses_recent_readings(self) -> None:
+        """For example, dropout tau 0 during a total sensor outage, before the stale limit."""
+        result = aggregate([(0.0, 20.0), (0.0, 22.0)], [], 0.00001)
+        assert result.temperature == pytest.approx(21.0)
+        assert result.fallback
+        assert result.contributing_rooms == 2
+
+    def test_stale_rooms_are_not_in_the_fallback(self) -> None:
+        # usable_temperature is None once stale, so only the recent room counts.
+        result = aggregate([(0.0, 20.0), (0.0, None)], [], 0.00001)
+        assert result.temperature == pytest.approx(20.0)
 
     def test_nothing_to_average_is_unavailable(self) -> None:
         assert aggregate([(0.5, None)], [], 0.00001) == Aggregate(

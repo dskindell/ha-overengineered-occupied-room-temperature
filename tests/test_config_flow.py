@@ -15,12 +15,13 @@ from homeassistant.helpers import area_registry as ar
 from custom_components.overengineered_occupied_room_temperature.const import (
     CHOICE_ADD,
     CHOICE_DONE,
-    CONF_ACTIVE_TEMPLATE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
+    CONF_OPENING_SENSORS,
+    CONF_OPENING_TEMPLATE,
     CONF_OVERRIDES,
     CONF_PEOPLE,
     CONF_PERSON,
@@ -276,7 +277,7 @@ async def test_add_room_rejects_invalid_template(hass: HomeAssistant) -> None:
     await flow.menu(CONF_ROOMS)
     await flow.submit({CONF_ROOM: CHOICE_ADD})
     with pytest.raises(InvalidData):
-        await flow.submit(room_input("kitchen", **{CONF_ACTIVE_TEMPLATE: "{{ states("}))
+        await flow.submit(room_input("kitchen", **{CONF_OPENING_TEMPLATE: "{{ states("}))
 
 
 async def test_add_room_rejects_invalid_override(hass: HomeAssistant) -> None:
@@ -494,3 +495,23 @@ async def test_closing_configure_without_saving_changes_nothing(hass: HomeAssist
     assert dict(entry.options) == before
 
 
+async def test_room_stores_opening_entities_and_template(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.add_room(
+        "kitchen",
+        **{
+            CONF_OCCUPANCY_TEMPLATE: "{{ true }}",
+            CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"],
+            CONF_OPENING_TEMPLATE: "{{ is_state('input_boolean.heater', 'on') }}",
+        },
+    )
+    await flow.submit({CONF_ROOM: CHOICE_DONE})
+    result = await flow.menu("finish")
+    assert result["options"][CONF_ROOMS]["kitchen"] == room_data(
+        "kitchen",
+        **{
+            CONF_OCCUPANCY_TEMPLATE: "{{ true }}",
+            CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"],
+            CONF_OPENING_TEMPLATE: "{{ is_state('input_boolean.heater', 'on') }}",
+        },
+    )

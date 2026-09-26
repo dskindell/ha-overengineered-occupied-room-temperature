@@ -28,15 +28,17 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.template import Template, result_as_boolean
+from homeassistant.helpers.template.helpers import forgiving_boolean
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
-    CONF_ACTIVE_TEMPLATE,
     CONF_DEFAULTS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
+    CONF_OPENING_SENSORS,
+    CONF_OPENING_TEMPLATE,
     CONF_OVERRIDES,
     CONF_PEOPLE,
     CONF_ROOMS,
@@ -85,7 +87,8 @@ class Room:
     temperature_sensor: str
     occupancy_sensors: list[str]
     occupancy_template: Template | None
-    active_template: Template | None
+    opening_sensors: list[str]
+    opening_template: Template | None
     config: RoomConfig
     state: RoomState = field(default_factory=RoomState)
     inputs: RoomInputs | None = None
@@ -141,7 +144,8 @@ class InstanceRuntime:
                 temperature_sensor=data[CONF_TEMPERATURE_SENSOR],
                 occupancy_sensors=list(data.get(CONF_OCCUPANCY_SENSORS, [])),
                 occupancy_template=self._template(data.get(CONF_OCCUPANCY_TEMPLATE)),
-                active_template=self._template(data.get(CONF_ACTIVE_TEMPLATE)),
+                opening_sensors=list(data.get(CONF_OPENING_SENSORS, [])),
+                opening_template=self._template(data.get(CONF_OPENING_TEMPLATE)),
                 config=_room_config(defaults, data.get(CONF_OVERRIDES, {})),
             )
         self.people: list[Person] = [
@@ -160,6 +164,7 @@ class InstanceRuntime:
         )
         self.result = Aggregate(None, 0.0, 0, False)
         self._template_results: dict[Template, Any] = {}
+        self._template_labels: dict[Template, list[str]] = {}
         self._hold = False
         self._listeners: list[Callable[[], None]] = []
 
@@ -193,17 +198,22 @@ class InstanceRuntime:
         for room in self.rooms.values():
             watched.add(room.temperature_sensor)
             watched.update(room.occupancy_sensors)
+            watched.update(room.opening_sensors)
         if watched:
             entry.async_on_unload(
                 async_track_state_change_event(self.hass, sorted(watched), self._async_on_state)
             )
 
-        templates = [
-            template
-            for room in self.rooms.values()
-            for template in (room.occupancy_template, room.active_template)
-            if template is not None
-        ]
+        for room in self.rooms.values():
+            for kind, template in (
+                ("occupancy", room.occupancy_template),
+                ("opening", room.opening_template),
+            ):
+                if template is not None:
+                    self._template_labels.setdefault(template, []).append(
+                        f"{room.name} {kind} template"
+                    )
+        templates = list(self._template_labels)
         if templates:
             info = async_track_template_result(
                 self.hass,
@@ -276,18 +286,56 @@ class InstanceRuntime:
     ) -> None:
         for update in updates:
             self._template_results[update.template] = update.result
+            self._log_template_result(update.template, update.result)
         self.async_update()
+
+    def _log_template_result(self, template: Template, result: Any) -> None:
+        """Log a template result that can't count as true or false.
+
+        Called only when a template's result changes, so each problem is logged
+        once until the result changes again. ``unavailable``/``unknown``/blank are
+        expected while a source entity is down and aren't logged.
+        """
+        labels = ", ".join(self._template_labels.get(template, []))
+        if isinstance(result, TemplateError):
+            _LOGGER.error(
+                "OORT zone %s: %s failed (%s); counting it as false",
+                self.entry.title,
+                labels,
+                result,
+            )
+        elif (
+            result is not None
+            and str(result).strip().lower() not in ("", STATE_UNAVAILABLE, STATE_UNKNOWN)
+            and forgiving_boolean(result, None) is None
+        ):
+            _LOGGER.warning(
+                "OORT zone %s: %s returned %r, which isn't true or false; counting it as false",
+                self.entry.title,
+                labels,
+                result,
+            )
 
     # -- inputs ---------------------------------------------------------------
 
-    def _template_value(self, template: Template | None, *, default: bool) -> bool:
-        """A template's latest result as a boolean; ``default`` if absent or failing."""
+    def _template_true(self, template: Template | None) -> bool:
+        """Whether a template's latest result is clearly true.
+
+        Only recognised true values count (``true``, ``on``, ``yes``, ``1``, …);
+        anything else — ``unavailable``, ``unknown``, other text, an error — is false.
+        """
         if template is None:
-            return default
+            return False
         result = self._template_results.get(template)
         if result is None or isinstance(result, TemplateError):
-            return default
+            return False
         return result_as_boolean(result)
+
+    def _any_on(self, entity_ids: list[str]) -> bool:
+        return any(
+            (state := self.hass.states.get(entity_id)) is not None and state.state == STATE_ON
+            for entity_id in entity_ids
+        )
 
     def _temperature(self, entity_id: str) -> float | None:
         """A sensor's reading converted to the system unit, or None if unusable."""
@@ -341,14 +389,13 @@ class InstanceRuntime:
                 current_temperatures.append(temperature)
             room.people = people_by_area.get(room.area_id, [])
             room.inputs = RoomInputs(
-                active=self._template_value(room.active_template, default=True),
+                active=not (
+                    self._any_on(room.opening_sensors)
+                    or self._template_true(room.opening_template)
+                ),
                 person_present=bool(room.people),
-                occupied=any(
-                    (state := self.hass.states.get(entity_id)) is not None
-                    and state.state == STATE_ON
-                    for entity_id in room.occupancy_sensors
-                )
-                or self._template_value(room.occupancy_template, default=False),
+                occupied=self._any_on(room.occupancy_sensors)
+                or self._template_true(room.occupancy_template),
                 temperature=temperature,
             )
             room.state = step_room(room.state, room.inputs, room.config, now, hold=self._hold)

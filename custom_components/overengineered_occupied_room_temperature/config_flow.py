@@ -29,12 +29,13 @@ from homeassistant.helpers import area_registry as ar, selector
 from .const import (
     CHOICE_ADD,
     CHOICE_DONE,
-    CONF_ACTIVE_TEMPLATE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
+    CONF_OPENING_SENSORS,
+    CONF_OPENING_TEMPLATE,
     CONF_OVERRIDES,
     CONF_PEOPLE,
     CONF_PERSON,
@@ -119,7 +120,15 @@ def _room_schema(*, new: bool) -> vol.Schema:
                 )
             ),
             vol.Optional(CONF_OCCUPANCY_TEMPLATE): selector.TemplateSelector(),
-            vol.Optional(CONF_ACTIVE_TEMPLATE): selector.TemplateSelector(),
+            vol.Optional(CONF_OPENING_SENSORS): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    filter=selector.EntityWithDeviceFilterSelectorConfig(
+                        domain=["binary_sensor", "input_boolean"]
+                    ),
+                    multiple=True,
+                )
+            ),
+            vol.Optional(CONF_OPENING_TEMPLATE): selector.TemplateSelector(),
             vol.Required(CONF_OVERRIDES): section(
                 vol.Schema({vol.Optional(key): _number() for key in ROOM_OVERRIDES}),
                 {"collapsed": True},
