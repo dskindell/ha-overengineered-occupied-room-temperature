@@ -205,13 +205,16 @@
       "weight_negative": "Weights can't be negative.",
       "stale_limit_not_positive": "The stale temperature limit must be greater than 0.",
       "base_weight_too_small": "The unoccupied weight must be at least 0.001."
+    },
+    "abort": {
+      "name_exists": "Another zone already has this name. Start again with a different name."
     }
   },
   "options": {
     "step": {
       "menu": {
         "title": "Zone setup",
-        "description": "Rooms: {rooms}\nPeople: {people}\n\nAdd at least one room to finish.",
+        "description": "Rooms: {rooms}\nPeople: {people}\n\nAdd at least one room to save.",
         "menu_options": {
           "defaults": "Defaults",
           "rooms": "Rooms",

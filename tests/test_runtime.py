@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
+from homeassistant.config_entries import ConfigEntryDisabler
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, UnitOfTemperature
 from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.util import dt as dt_util
@@ -663,6 +664,24 @@ async def test_area_name_matching_ignores_case_and_spaces(hass: HomeAssistant) -
     hass.states.async_set("sensor.alex_area", "  KIT chen ")
     await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == ["Alex"]
+
+
+async def test_disabling_a_zone_clears_its_repairs_issue(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_instance(hass, [room("kitchen")])
+    issues = ir.async_get(hass)
+    issue_id = f"no_occupancy_source_{entry.entry_id}"
+    assert issues.async_get_issue(DOMAIN, issue_id) is not None
+
+    await hass.config_entries.async_set_disabled_by(
+        entry.entry_id, ConfigEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
+
+    await hass.config_entries.async_set_disabled_by(entry.entry_id, None)
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, issue_id) is not None, "set again when enabled"
 
 
 async def test_deleting_a_zone_clears_its_repairs_issue(hass: HomeAssistant) -> None:

@@ -171,8 +171,9 @@ def _person_details_schema(entity_id: str) -> vol.Schema:
 def _choice_schema(key: str, items: dict[str, str], add_label: str) -> vol.Schema:
     """A list form: the existing items, then "add" and "done".
 
-    The translation key covers only "add" and "done"; the items' own labels are
-    names from the user's setup (experiment: does the frontend fall back to them?).
+    The translation key covers only "add" and "done"; the labels given here
+    are fallbacks for them. The items' own labels are names from the user's setup,
+    which the frontend shows as given.
     """
     options = [
         selector.SelectOptionDict(value=value, label=label) for value, label in items.items()
@@ -408,7 +409,8 @@ class ZoneMenu(ConfigEntryBaseFlow):
             ),
             description_placeholders={
                 "entity": entity_id,
-                "state": state.state if state is not None else "not found",
+                # Shown inside backticks, so a backtick in the state can't break them.
+                "state": state.state.replace("`", "'") if state is not None else "not found",
             },
         )
 
@@ -427,18 +429,21 @@ class OortConfigFlow(ZoneMenu, ConfigFlow, domain=DOMAIN):
         """Configure an existing zone through the same menu."""
         return OortOptionsFlow()
 
+    def _name_taken(self, name: str) -> bool:
+        """Whether another zone already has this name, ignoring case."""
+        return name.casefold() in {
+            entry.title.strip().casefold()
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+        }
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Name the zone."""
         errors: dict[str, str] = {}
         if user_input is not None:
             name = user_input[CONF_NAME].strip()
-            taken = {
-                entry.title.strip().casefold()
-                for entry in self.hass.config_entries.async_entries(DOMAIN)
-            }
             if not name:
                 errors[CONF_NAME] = "name_blank"
-            elif name.casefold() in taken:
+            elif self._name_taken(name):
                 errors[CONF_NAME] = "name_exists"
             else:
                 self._name = name
@@ -454,6 +459,9 @@ class OortConfigFlow(ZoneMenu, ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Create the zone with everything set up in the menu."""
+        # Checked again here: another flow may have created the name meanwhile.
+        if self._name_taken(self._name):
+            return self.async_abort(reason="name_exists")
         return self.async_create_entry(
             title=self._name,
             data={

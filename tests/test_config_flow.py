@@ -212,6 +212,18 @@ async def test_zone_name_must_be_unique(hass: HomeAssistant) -> None:
     assert result["errors"] == {CONF_NAME: "name_exists"}
 
 
+async def test_name_taken_by_another_flow_meanwhile_aborts_at_finish(hass: HomeAssistant) -> None:
+    """Two create flows at once can't both make "Home"."""
+    flow = await start_zone(hass, "Home")
+    await flow.add_room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})
+    await flow.submit({CONF_ROOM: CHOICE_DONE})
+    zone_entry(hass, "home")  # created by another flow in the meantime
+    result = await flow.menu("finish")
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "name_exists"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
 async def test_zone_name_must_not_be_blank(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_NAME: "  "})
@@ -395,6 +407,15 @@ async def test_person_details_step_shows_current_value(hass: HomeAssistant) -> N
     assert flow.result["description_placeholders"]["state"] == "Kitchen"
     await flow.submit({CONF_VALUE_TYPE: "area_name"})
     assert flow.step == CONF_PEOPLE
+
+
+async def test_person_details_state_cannot_break_its_formatting(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.phone", "Amy`s room")
+    flow = await start_zone(hass)
+    await flow.menu(CONF_PEOPLE)
+    await flow.submit({CONF_PERSON: CHOICE_ADD})
+    await flow.submit({CONF_NAME: "Amy", CONF_SOURCE_ENTITY: "sensor.phone"})
+    assert flow.result["description_placeholders"]["state"] == "Amy's room"
 
 
 async def test_person_name_must_not_be_blank(hass: HomeAssistant) -> None:

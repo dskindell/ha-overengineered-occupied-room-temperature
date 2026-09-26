@@ -89,7 +89,7 @@ class RoomExtraData(ExtraStoredData):
 class RoomWeightSensor(_OortSensor, RestoreEntity):
     """A room's current weight, with the inputs behind it as attributes."""
 
-    _attr_suggested_display_precision = 3
+    _attr_suggested_display_precision = 4  # as stored (WEIGHT_DECIMALS)
 
     def __init__(self, runtime: InstanceRuntime, room: Room, device: DeviceInfo) -> None:
         super().__init__(runtime, device)

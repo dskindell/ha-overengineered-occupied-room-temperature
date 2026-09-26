@@ -9,6 +9,8 @@ import logging
 import math
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
@@ -20,6 +22,7 @@ from homeassistant.core import CoreState, Event, EventStateChangedData, HomeAssi
 from homeassistant.exceptions import TemplateError
 from homeassistant.helpers import (
     area_registry as ar,
+    config_validation as cv,
     entity_registry as er,
     issue_registry as ir,
     restore_state,
@@ -34,7 +37,6 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.template import Template, result_as_boolean
-from homeassistant.helpers.template.helpers import forgiving_boolean
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
 
@@ -83,6 +85,16 @@ from .engine import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_boolean(value: Any) -> bool:
+    """Whether Home Assistant's true/false rule recognises ``value`` (``cv.boolean``,
+    which ``result_as_boolean`` applies)."""
+    try:
+        cv.boolean(value)
+    except vol.Invalid:
+        return False
+    return True
 
 _MISSING = (None, "", STATE_UNKNOWN, STATE_UNAVAILABLE)
 
@@ -406,7 +418,7 @@ class InstanceRuntime:
         elif (
             result is not None
             and str(result).strip().lower() not in ("", STATE_UNAVAILABLE, STATE_UNKNOWN)
-            and forgiving_boolean(result, None) is None
+            and not _is_boolean(result)
         ):
             kind = "unrecognised"
         else:

@@ -30,7 +30,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
-    """Unload an OORT zone."""
+    """Unload an OORT zone; its Repairs issue goes with it (set again on load)."""
+    ir.async_delete_issue(hass, DOMAIN, f"no_occupancy_source_{entry.entry_id}")
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
