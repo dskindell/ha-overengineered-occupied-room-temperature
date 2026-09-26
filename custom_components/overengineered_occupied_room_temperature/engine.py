@@ -63,7 +63,7 @@ class RoomConfig:
 
     taus: Taus = field(default_factory=Taus)
     weights: Weights = field(default_factory=Weights)
-    stale_limit: float = 15.0
+    stale_limit: float = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +91,9 @@ class RoomState:
     status: Status = Status.UNOCCUPIED
     last_occupied_state: Status | None = None
     last_known_temperature: float | None = None
+    last_seen: float | None = None
+    """When the temperature sensor last had a valid reading. Saved across restarts,
+    so a reading older than the stale limit isn't reused after a long downtime."""
     dropout_since: float | None = None
     stale: bool = False
     last_update: float | None = None
@@ -207,11 +210,19 @@ def step_room(
     last_known_temperature: float | None
     if inputs.temperature is not None:
         last_known_temperature = inputs.temperature
+        last_seen: float | None = now
         dropout_since = None
         stale = False
     else:
         last_known_temperature = state.last_known_temperature
-        dropout_since = now if state.dropout_since is None else state.dropout_since
+        last_seen = state.last_seen
+        # The stale clock counts from when the sensor was last seen working.
+        if state.dropout_since is not None:
+            dropout_since = state.dropout_since
+        elif state.last_seen is not None:
+            dropout_since = state.last_seen
+        else:
+            dropout_since = now
         stale = now - dropout_since > config.stale_limit * 60
 
     status = room_status(inputs)
@@ -234,6 +245,7 @@ def step_room(
         status=status,
         last_occupied_state=last_occupied_state,
         last_known_temperature=last_known_temperature,
+        last_seen=last_seen,
         dropout_since=dropout_since,
         stale=stale,
         last_update=now,

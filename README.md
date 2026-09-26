@@ -110,7 +110,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
 | Unoccupied weight | Target weight otherwise. Must be greater than 0. | 0.001 |
-| Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor drops out, before the room is left out. Zone-wide only. | 15 |
+| Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. Long enough to ride out a restart or an integration reload. Zone-wide only. | 5 |
 
 Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight and the stale limit must be greater than 0.
 
@@ -182,13 +182,15 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in you
 
 ## Fallback and stale sensors
 
-Every room's temperature sensor is read continuously, independent of whether the room counts as active. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature, the room keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit**, that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
+Every room's temperature sensor is read continuously, independent of whether the room counts as active. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature, the room keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit** (counted from when it was last seen working), that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
 
 The overall `Temperature` sensor also has a small **fallback term**: a plain average of every room's current valid reading (regardless of whether that room is active), with a fixed weight equal to 1% of your smallest room's unoccupied weight. This term is normally negligible next to any room with real weight, but it keeps the sensor producing a sensible number — rather than becoming unavailable — while every room is fading toward zero (for example, right after startup, or if every room is deactivated at once). If every temperature sensor is down at once, the fallback uses the rooms' last readings instead, until they go stale. The `fallback` attribute turns `true` when this term's weight exceeds the sum of every room's own weight, which is your cue that the temperature is currently closer to a whole-home average than to an occupancy-weighted one.
 
+Last readings are saved across restarts, so a normal reboot doesn't make the output jump while sensors reconnect. After a longer downtime, readings older than the stale limit aren't reused; each room joins in again as soon as its sensor reports.
+
 The `Temperature` sensor becomes `unavailable` only when there's nothing at all to average — every room is either stale or has never reported a valid temperature.
 
-So during a total sensor outage the thermostat gets the last readings for at most the stale limit (15 minutes by default), then `unavailable`. If your thermostat can turn itself off when its sensor is unavailable — `dual_smart_thermostat`'s `sensor_stale_duration`, for example — set that too, a little longer than OORT's stale limit.
+So during a total sensor outage the thermostat gets the last readings for at most the stale limit (5 minutes by default), then `unavailable`. If your thermostat can turn itself off when its sensor is unavailable — `dual_smart_thermostat`'s `sensor_stale_duration`, for example — set that too, a little longer than OORT's stale limit.
 
 ## Startup grace period
 
@@ -230,7 +232,7 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```
 
-This runs 136 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
+This runs 141 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
 Lint with [ruff](https://docs.astral.sh/ruff/):
 

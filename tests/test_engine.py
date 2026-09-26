@@ -222,19 +222,40 @@ class TestStepRoom:
 
     def test_dropout_keeps_last_known_temperature_until_stale(self) -> None:
         state = step_room(RoomState(), inputs(temperature=68.0), CONFIG, 0.0)
+        assert state.last_seen == 0.0
         state = step_room(state, inputs(temperature=None), CONFIG, MINUTE)
         assert state.status is Status.INACTIVE
         assert state.tau == CONFIG.taus.dropout
-        assert state.dropout_since == MINUTE
+        assert state.dropout_since == 0.0  # counted from when it was last seen working
         assert state.usable_temperature == 68.0
 
         limit = CONFIG.stale_limit * MINUTE
-        state = step_room(state, inputs(temperature=None), CONFIG, MINUTE + limit)
+        state = step_room(state, inputs(temperature=None), CONFIG, limit)
         assert not state.stale  # exactly at the stale limit
-        assert state.dropout_since == MINUTE
-        state = step_room(state, inputs(temperature=None), CONFIG, MINUTE + limit + 1)
+        assert state.dropout_since == 0.0
+        state = step_room(state, inputs(temperature=None), CONFIG, limit + 1)
         assert state.stale
         assert state.usable_temperature is None
+
+    def test_restored_reading_older_than_the_limit_is_stale_at_once(self) -> None:
+        """After a long downtime, a saved reading isn't treated as fresh."""
+        saved = RoomState(
+            weight=1.0, target=1.0, status=Status.PERSON, last_known_temperature=68.0, last_seen=0.0
+        )
+        state = step_room(saved, inputs(temperature=None), CONFIG, 2 * 3600.0)
+        assert state.stale
+        assert state.usable_temperature is None
+
+    def test_restored_recent_reading_bridges_a_reboot(self) -> None:
+        saved = RoomState(
+            weight=1.0, target=1.0, status=Status.PERSON, last_known_temperature=68.0, last_seen=0.0
+        )
+        state = step_room(saved, inputs(temperature=None), CONFIG, 2 * MINUTE)
+        assert not state.stale
+        assert state.usable_temperature == 68.0
+
+    def test_default_stale_limit_is_5_minutes(self) -> None:
+        assert CONFIG.stale_limit == 5
 
     def test_sensor_recovery_clears_dropout(self) -> None:
         state = RoomState(

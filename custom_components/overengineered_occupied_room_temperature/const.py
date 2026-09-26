@@ -69,7 +69,7 @@ DEFAULTS: Final[dict[str, float]] = {
     CONF_W_PERSON: 1.0,
     CONF_W_OCCUPIED: 0.5,
     CONF_W_BASE: 0.001,
-    CONF_STALE_LIMIT: 15.0,
+    CONF_STALE_LIMIT: 5.0,
 }
 
 GRACE_PERIOD_SECONDS: Final = 120

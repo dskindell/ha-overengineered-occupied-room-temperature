@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, UnitOfTemperature
 from homeassistant.core import CoreState, HomeAssistant, State
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
@@ -759,8 +760,40 @@ async def test_total_outage_with_instant_dropout_holds_until_stale_limit(
     assert hass.states.get(TEMPERATURE).state == STATE_UNAVAILABLE
 
 
-def test_default_stale_limit_is_15_minutes() -> None:
-    assert DEFAULTS["stale_limit"] == 15
+def test_default_stale_limit_is_5_minutes() -> None:
+    assert DEFAULTS["stale_limit"] == 5
+
+
+@pytest.mark.parametrize(("downtime_minutes", "reading_used"), [(2, True), (120, False)])
+async def test_restored_reading_used_only_after_a_short_downtime(
+    hass: HomeAssistant, downtime_minutes: int, reading_used: bool
+) -> None:
+    """A reboot is bridged by saved readings; a long outage isn't."""
+    now = dt_util.utcnow().timestamp()
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(KITCHEN_WEIGHT, "1.0"),
+                {
+                    "weight": 1.0, "target": 1.0, "tau": 3.0, "status": "person",
+                    "last_occupied_state": "person", "last_known_temperature": 30.0,
+                    "dropout_since": None, "stale": False, "last_update": now,
+                    "last_seen": now - downtime_minutes * 60,
+                },
+            )
+        ],
+    )
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)  # not back yet
+    set_temperature(hass, "office", "20")
+    await setup_instance(hass, [room("kitchen"), room("office")])
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert kitchen.attributes["temperature_stale"] is not reading_used
+    temperature = float(hass.states.get(TEMPERATURE).state)
+    if reading_used:
+        assert temperature > 25.0  # the kitchen's saved 30° still dominates
+    else:
+        assert temperature == pytest.approx(20.0)  # only the office counts
 
 
 # ---------------------------------------------------------------------------
