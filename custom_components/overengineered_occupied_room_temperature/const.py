@@ -78,4 +78,7 @@ GRACE_PERIOD_SECONDS: Final = 120
 # digits that settled values stop producing new recorder rows.
 WEIGHT_DECIMALS: Final = 4
 TEMPERATURE_DECIMALS: Final = 1
+# Smallest unoccupied weight: lower values change the output by hundredths of
+# a degree at most, and 0.001 still shows at the stored weight precision.
+MIN_BASE_WEIGHT: Final = 0.001
 UPDATE_INTERVAL_SECONDS: Final = 60

@@ -222,7 +222,8 @@ async def test_zone_name_must_not_be_blank(hass: HomeAssistant) -> None:
     ("settings", "error"),
     [
         ({"tau_person_rise": 0}, "tau_not_positive"),
-        ({"w_base": 0}, "base_weight_not_positive"),
+        ({"w_base": 0}, "base_weight_too_small"),
+        ({"w_base": 0.0005}, "base_weight_too_small"),
         ({"stale_limit": 0}, "stale_limit_not_positive"),
     ],
 )
@@ -284,7 +285,7 @@ async def test_add_room_rejects_invalid_override(hass: HomeAssistant) -> None:
     flow = await start_zone(hass)
     await flow.add_room("kitchen", **{CONF_OVERRIDES: {"w_base": 0}})
     assert flow.step == CONF_ROOM
-    assert flow.result["errors"] == {"base": "base_weight_not_positive"}
+    assert flow.result["errors"] == {"base": "base_weight_too_small"}
 
 
 async def test_blank_optional_room_fields_are_dropped(hass: HomeAssistant) -> None:
@@ -515,3 +516,18 @@ async def test_room_stores_opening_entities_and_template(hass: HomeAssistant) ->
             CONF_OPENING_TEMPLATE: "{{ is_state('input_boolean.heater', 'on') }}",
         },
     )
+
+
+async def test_smallest_unoccupied_weight_is_accepted(hass: HomeAssistant) -> None:
+    """0.001 is the minimum (and the default)."""
+    flow = await start_zone(hass)
+    await flow.menu(CONF_DEFAULTS)
+    await flow.submit({**DEFAULTS, "w_base": 0.001})
+    assert flow.step == "menu"
+
+
+async def test_too_small_unoccupied_weight_override_rejected(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.add_room("kitchen", **{CONF_OVERRIDES: {"w_base": 0.0001}})
+    assert flow.step == CONF_ROOM
+    assert flow.result["errors"] == {"base": "base_weight_too_small"}

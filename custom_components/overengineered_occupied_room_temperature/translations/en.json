@@ -45,7 +45,7 @@
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default 5.",
           "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Default 1.0.",
           "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Default 0.5.",
-          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be greater than 0. Default 0.001.",
+          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Default 0.001.",
           "stale_limit": "Minutes a room's last reading is still used after its temperature sensor drops out; after that the room is left out. Default 5."
         }
       },
@@ -102,7 +102,7 @@
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
-              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be greater than 0. Leave blank to use the zone's default."
+              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Leave blank to use the zone's default."
             }
           }
         }
@@ -150,7 +150,7 @@
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
-              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be greater than 0. Leave blank to use the zone's default."
+              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Leave blank to use the zone's default."
             }
           }
         }
@@ -203,8 +203,8 @@
       "tau_not_positive": "Person and occupancy taus must be greater than 0.",
       "tau_negative": "Deactivate and dropout taus can't be negative.",
       "weight_negative": "Weights can't be negative.",
-      "base_weight_not_positive": "The unoccupied weight must be greater than 0.",
-      "stale_limit_not_positive": "The stale temperature limit must be greater than 0."
+      "stale_limit_not_positive": "The stale temperature limit must be greater than 0.",
+      "base_weight_too_small": "The unoccupied weight must be at least 0.001."
     }
   },
   "options": {
@@ -243,7 +243,7 @@
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default 5.",
           "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Default 1.0.",
           "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Default 0.5.",
-          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be greater than 0. Default 0.001.",
+          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Default 0.001.",
           "stale_limit": "Minutes a room's last reading is still used after its temperature sensor drops out; after that the room is left out. Default 5."
         }
       },
@@ -300,7 +300,7 @@
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
-              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be greater than 0. Leave blank to use the zone's default."
+              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Leave blank to use the zone's default."
             }
           }
         }
@@ -348,7 +348,7 @@
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
-              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be greater than 0. Leave blank to use the zone's default."
+              "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Leave blank to use the zone's default."
             }
           }
         }
@@ -401,8 +401,8 @@
       "tau_not_positive": "Person and occupancy taus must be greater than 0.",
       "tau_negative": "Deactivate and dropout taus can't be negative.",
       "weight_negative": "Weights can't be negative.",
-      "base_weight_not_positive": "The unoccupied weight must be greater than 0.",
-      "stale_limit_not_positive": "The stale temperature limit must be greater than 0."
+      "stale_limit_not_positive": "The stale temperature limit must be greater than 0.",
+      "base_weight_too_small": "The unoccupied weight must be at least 0.001."
     }
   },
   "selector": {

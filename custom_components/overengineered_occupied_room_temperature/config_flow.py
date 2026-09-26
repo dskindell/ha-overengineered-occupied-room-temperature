@@ -50,6 +50,7 @@ from .const import (
     CONF_W_BASE,
     DEFAULTS,
     DOMAIN,
+    MIN_BASE_WEIGHT,
     TAUS,
     TAUS_POSITIVE,
     TAUS_ZERO_ALLOWED,
@@ -80,8 +81,8 @@ def validate_settings(values: Mapping[str, Any]) -> str | None:
         return "tau_negative"
     if any(values[key] < 0 for key in WEIGHTS if key in values):
         return "weight_negative"
-    if CONF_W_BASE in values and values[CONF_W_BASE] <= 0:
-        return "base_weight_not_positive"
+    if CONF_W_BASE in values and values[CONF_W_BASE] < MIN_BASE_WEIGHT:
+        return "base_weight_too_small"
     if CONF_STALE_LIMIT in values and values[CONF_STALE_LIMIT] <= 0:
         return "stale_limit_not_positive"
     return None
