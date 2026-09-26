@@ -8,21 +8,21 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN
-from .instance import InstanceRuntime
+from .zone import ZoneRuntime, issue_id
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
-type OortConfigEntry = ConfigEntry[InstanceRuntime]
+type OortConfigEntry = ConfigEntry[ZoneRuntime]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
     """Set up an OORT zone."""
-    entry.runtime_data = InstanceRuntime(hass, entry)
+    entry.runtime_data = ZoneRuntime(hass, entry)
     # Restore rooms and compute a first result before the entities are added, so
     # they never write a placeholder state.
     entry.runtime_data.async_prime()
-    # Platform setup waits for its entities to be added, so every room sensor has
-    # restored its saved state before the runtime starts computing.
+    # Platform setup waits for its entities to be added (with the primed state);
+    # only then do the listeners start, so every recompute can write.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.runtime_data.async_start()
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -31,13 +31,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool
 
 async def async_unload_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
     """Unload an OORT zone; its Repairs issue goes with it (set again on load)."""
-    ir.async_delete_issue(hass, DOMAIN, f"no_occupancy_source_{entry.entry_id}")
+    ir.async_delete_issue(hass, DOMAIN, issue_id(entry))
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: OortConfigEntry) -> None:
     """Clear the zone's Repairs issue when it is deleted."""
-    ir.async_delete_issue(hass, DOMAIN, f"no_occupancy_source_{entry.entry_id}")
+    ir.async_delete_issue(hass, DOMAIN, issue_id(entry))
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: OortConfigEntry) -> None:

@@ -1,4 +1,4 @@
-"""Sensors: a weight per room and the instance's weighted temperature."""
+"""Sensors: a weight per room and the zone's weighted temperature."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -17,17 +16,18 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
-from .instance import InstanceRuntime, Room, room_unique_id, temperature_unique_id
+from . import OortConfigEntry
 from .storage import RoomExtraData
+from .zone import Room, ZoneRuntime, room_unique_id, temperature_unique_id
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: OortConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create the instance's sensors and remove those of deleted rooms."""
-    runtime: InstanceRuntime = entry.runtime_data
+    """Create the zone's sensors and remove those of deleted rooms."""
+    runtime = entry.runtime_data
     device = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name=f"OORT {entry.title}",
@@ -57,7 +57,7 @@ class _OortSensor(SensorEntity):
     _attr_should_poll = False
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, runtime: InstanceRuntime, device: DeviceInfo) -> None:
+    def __init__(self, runtime: ZoneRuntime, device: DeviceInfo) -> None:
         self._runtime = runtime
         self._attr_device_info = device
 
@@ -73,9 +73,9 @@ class _OortSensor(SensorEntity):
 class RoomWeightSensor(_OortSensor, RestoreEntity):
     """A room's current weight, with the inputs behind it as attributes."""
 
-    _attr_suggested_display_precision = 4  # as stored (WEIGHT_DECIMALS)
+    _attr_suggested_display_precision = WEIGHT_DECIMALS
 
-    def __init__(self, runtime: InstanceRuntime, room: Room, device: DeviceInfo) -> None:
+    def __init__(self, runtime: ZoneRuntime, room: Room, device: DeviceInfo) -> None:
         super().__init__(runtime, device)
         self._room = room
         self._attr_name = f"{room.name} weight"
@@ -119,15 +119,15 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
 
 
 class WeightedTemperatureSensor(_OortSensor):
-    """The instance's occupancy-weighted temperature."""
+    """The zone's occupancy-weighted temperature."""
 
     _attr_name = "Temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_suggested_display_precision = 1
+    _attr_suggested_display_precision = TEMPERATURE_DECIMALS
     # Changes on almost every update; kept on the entity but out of history.
     _unrecorded_attributes = frozenset({"total_weight"})
 
-    def __init__(self, runtime: InstanceRuntime, device: DeviceInfo) -> None:
+    def __init__(self, runtime: ZoneRuntime, device: DeviceInfo) -> None:
         super().__init__(runtime, device)
         self._attr_unique_id = temperature_unique_id(runtime.entry)
         self._attr_native_unit_of_measurement = runtime.unit

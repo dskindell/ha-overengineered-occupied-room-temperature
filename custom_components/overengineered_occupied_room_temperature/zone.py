@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from enum import StrEnum
 import logging
 import math
 from typing import Any
@@ -99,6 +100,14 @@ def _render(template: Template) -> Any:
 _MISSING = (None, "", STATE_UNKNOWN, STATE_UNAVAILABLE)
 
 
+class _Result(StrEnum):
+    """What kind of result a template gave, for logging each change once."""
+
+    OK = "ok"
+    ERROR = "error"
+    UNRECOGNISED = "unrecognised"
+
+
 @dataclass(slots=True)
 class Room:
     """A configured room and its live state."""
@@ -130,11 +139,18 @@ class Person:
 
 
 def room_unique_id(entry: ConfigEntry, area_id: str) -> str:
+    """Unique ID of a room's weight sensor; the area is the room's identity."""
     return f"{entry.entry_id}_{area_id}_weight"
 
 
 def temperature_unique_id(entry: ConfigEntry) -> str:
+    """Unique ID of the zone's Temperature sensor."""
     return f"{entry.entry_id}_temperature"
+
+
+def issue_id(entry: ConfigEntry) -> str:
+    """ID of the zone's missing-occupancy Repairs issue."""
+    return f"no_occupancy_source_{entry.entry_id}"
 
 
 def _signature(room: Room) -> tuple[Any, ...]:
@@ -157,8 +173,8 @@ def _signature(room: Room) -> tuple[Any, ...]:
     )
 
 
-class InstanceRuntime:
-    """Runs one OORT instance: its rooms, people, subscriptions and update loop."""
+class ZoneRuntime:
+    """Runs one OORT zone: its rooms, people, subscriptions and update loop."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
@@ -206,7 +222,7 @@ class InstanceRuntime:
         self.write_all = True
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
-        self._template_problems: dict[Template, str] = {}
+        self._template_problems: dict[Template, _Result] = {}
         # Grace period only while Home Assistant itself is starting.
         self._hold = hass.state is not CoreState.running
         self._listeners: list[Callable[[], None]] = []
@@ -334,7 +350,7 @@ class InstanceRuntime:
     @callback
     def _async_update_repairs(self) -> None:
         """Warn when rooms can never be occupied: no people and no occupancy source."""
-        issue_id = f"no_occupancy_source_{self.entry.entry_id}"
+        repairs_id = issue_id(self.entry)
         rooms = sorted(
             room.name
             for room in self.rooms.values()
@@ -344,22 +360,21 @@ class InstanceRuntime:
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                issue_id,
+                repairs_id,
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="no_occupancy_source",
                 translation_placeholders={"zone": self.entry.title, "rooms": ", ".join(rooms)},
             )
         else:
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            ir.async_delete_issue(self.hass, DOMAIN, repairs_id)
 
     # -- triggers -------------------------------------------------------------
 
     @callback
     def _async_on_state(self, _event: Event[EventStateChangedData]) -> None:
-        # Weights are rewritten only when a room's status or inputs change; a new
-        # temperature reading alone updates just the Temperature sensor.
-        self.async_update(write_weights=False)
+        # Sensors are rewritten only when something they show changes.
+        self.async_update(write_everything=False)
 
     @callback
     def _async_on_timer(self, _now: datetime) -> None:
@@ -372,7 +387,7 @@ class InstanceRuntime:
         for update in updates:
             self._template_results[update.template] = update.result
             self._log_template_result(update.template, update.result)
-        self.async_update(write_weights=False)
+        self.async_update(write_everything=False)
 
     def _log_template_result(self, template: Template, result: Any) -> None:
         """Log a template result that can't count as true or false.
@@ -383,27 +398,27 @@ class InstanceRuntime:
         entity is down; they count as fine and aren't logged.
         """
         if isinstance(result, TemplateError):
-            kind = "error"
+            kind = _Result.ERROR
         elif (
             result is not None
             and str(result).strip().lower() not in ("", STATE_UNAVAILABLE, STATE_UNKNOWN)
             and not _is_boolean(result)
         ):
-            kind = "unrecognised"
+            kind = _Result.UNRECOGNISED
         else:
-            kind = "ok"
-        if self._template_problems.get(template, "ok") == kind:
+            kind = _Result.OK
+        if self._template_problems.get(template, _Result.OK) is kind:
             return
         self._template_problems[template] = kind
         labels = ", ".join(self._template_labels.get(template, []))
-        if kind == "error":
+        if kind is _Result.ERROR:
             _LOGGER.error(
                 "OORT zone %s: %s failed (%s); counting it as false",
                 self.entry.title,
                 labels,
                 result,
             )
-        elif kind == "unrecognised":
+        elif kind is _Result.UNRECOGNISED:
             _LOGGER.warning(
                 "OORT zone %s: %s returned %r, which isn't true or false; counting it as false",
                 self.entry.title,
@@ -483,8 +498,13 @@ class InstanceRuntime:
     # -- update ---------------------------------------------------------------
 
     @callback
-    def async_update(self, *, write_weights: bool = True) -> None:
-        """Advance every room to now, recompute the output and notify entities."""
+    def async_update(self, *, write_everything: bool = True) -> None:
+        """Advance every room to now, recompute the output and notify entities.
+
+        With ``write_everything`` (the minute timer, startup, grace end) every sensor
+        writes its state; otherwise (a state or template event) a sensor writes only
+        if something it shows has changed.
+        """
         now = dt_util.utcnow().timestamp()
         people_by_area: dict[str, list[str]] = {}
         for person in self.people:
@@ -516,7 +536,7 @@ class InstanceRuntime:
         self.result = step.result
         for area_id, room in self.rooms.items():
             room.state = step.rooms[area_id]
-            room.write_pending = write_weights or _signature(room) != before[area_id]
+            room.write_pending = write_everything or _signature(room) != before[area_id]
         self.write_all = any(room.write_pending for room in self.rooms.values())
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's

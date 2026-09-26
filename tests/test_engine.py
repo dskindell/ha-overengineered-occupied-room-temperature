@@ -4,6 +4,7 @@ from dataclasses import fields, replace
 from itertools import pairwise
 import math
 from types import EllipsisType
+from typing import Any
 
 import const  # the integration's constants; no Home Assistant imports
 import pytest
@@ -22,7 +23,6 @@ from engine import (
     fallback_epsilon,
     room_config,
     room_status,
-    select_tau,
     select_tau_name,
     step_room,
     step_zone,
@@ -30,6 +30,13 @@ from engine import (
 )
 
 MINUTE = 60.0
+
+
+def select_tau(status: Status, last: Status | None, taus: Taus, **history: Any) -> float:
+    """The tau value ``select_tau_name`` picks, as step_room looks it up."""
+    tau: float = getattr(taus, select_tau_name(status, last, **history))
+    return tau
+
 CONFIG = room_config(const.DEFAULTS, {})
 
 

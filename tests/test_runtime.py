@@ -1,4 +1,4 @@
-"""End-to-end tests: a real instance in an in-memory Home Assistant."""
+"""End-to-end tests: a real zone in an in-memory Home Assistant."""
 
 from __future__ import annotations
 
@@ -53,7 +53,12 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     ZONE_SETTINGS,
 )
 
-from custom_components.overengineered_occupied_room_temperature.engine import RoomState, Status
+from custom_components.overengineered_occupied_room_temperature.engine import (
+    RoomState,
+    Status,
+    TauName,
+)
+from custom_components.overengineered_occupied_room_temperature.zone import issue_id, room_unique_id
 from custom_components.overengineered_occupied_room_temperature.storage import (
     SAVED_VERSION,
     RoomExtraData,
@@ -105,7 +110,7 @@ def set_temperature(hass: HomeAssistant, area_id: str, value: str, unit: str = "
     )
 
 
-async def setup_instance(
+async def setup_zone(
     hass: HomeAssistant, items: list[tuple[str, str, dict[str, Any]]], **settings: float
 ) -> MockConfigEntry:
     areas = ar.async_get(hass)
@@ -128,7 +133,7 @@ async def setup_instance(
             registry.async_get_or_create(
                 "sensor",
                 DOMAIN,
-                f"{entry.entry_id}_{key}_weight",
+                room_unique_id(entry, key),
                 suggested_object_id=f"oort_home_{key}_weight",
                 config_entry=entry,
             )
@@ -148,6 +153,15 @@ def weight(hass: HomeAssistant, entity_id: str) -> float:
     return float(hass.states.get(entity_id).state)
 
 
+def restore_room_state(hass: HomeAssistant, *, unit: str = "°C", **fields: Any) -> None:
+    """Seed Home Assistant's restore store with the kitchen's saved state, written
+    the way the integration writes it (RoomState → RoomExtraData)."""
+    state = RoomState(**fields)
+    mock_restore_cache_with_extra_data(
+        hass, [(State(KITCHEN_WEIGHT, str(state.weight)), RoomExtraData(state, unit).as_dict())]
+    )
+
+
 @pytest.fixture(autouse=True)
 def metric(hass: HomeAssistant) -> None:
     assert hass.config.units.temperature_unit == UnitOfTemperature.CELSIUS
@@ -156,7 +170,7 @@ def metric(hass: HomeAssistant) -> None:
 async def test_creates_device_and_entities(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
 
     for entity_id in (KITCHEN_WEIGHT, OFFICE_WEIGHT, TEMPERATURE):
         assert hass.states.get(entity_id) is not None, entity_id
@@ -172,7 +186,7 @@ async def test_person_pulls_the_temperature_toward_their_room(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")]
     )
 
@@ -199,7 +213,7 @@ async def test_person_pulls_the_temperature_toward_their_room(
 async def test_person_location_by_area_id_attribute(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_phone", "home", {"area_id": "kitchen"})
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room("kitchen"),
@@ -215,7 +229,7 @@ async def test_person_location_by_area_id_attribute(hass: HomeAssistant) -> None
 async def test_unregistered_area_matches_no_room(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Garage")
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "unoccupied"
 
 
@@ -224,7 +238,7 @@ async def test_occupancy_sensor_and_template(hass: HomeAssistant) -> None:
     set_temperature(hass, "office", "24")
     hass.states.async_set("binary_sensor.kitchen_motion", "off")
     hass.states.async_set("input_boolean.office_desk", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}),
@@ -250,7 +264,7 @@ async def test_opening_template_true_fades_room_out(
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_window", "off")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room(
@@ -276,7 +290,7 @@ async def test_any_opening_entity_on_makes_room_open(hass: HomeAssistant) -> Non
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_window", "off")
     hass.states.async_set("input_boolean.kitchen_door_open", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room(
@@ -310,7 +324,7 @@ async def test_any_opening_entity_on_makes_room_open(hass: HomeAssistant) -> Non
 async def test_unavailable_opening_entity_is_not_open(hass: HomeAssistant, state: str) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_window", state)
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"]})]
     )
     assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
@@ -318,7 +332,7 @@ async def test_unavailable_opening_entity_is_not_open(hass: HomeAssistant, state
 
 async def test_missing_opening_entity_is_not_open(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.does_not_exist"]})]
     )
     assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
@@ -328,7 +342,7 @@ async def test_opening_entities_and_template_combine(hass: HomeAssistant) -> Non
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_window", "off")
     hass.states.async_set("input_boolean.heater", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room(
@@ -348,7 +362,7 @@ async def test_opening_entities_and_template_combine(hass: HomeAssistant) -> Non
 
 async def test_fahrenheit_sensor_is_converted(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "68", unit="°F")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     # Only one room: the plain-average term dominates while it rises from 0.
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0)
 
@@ -357,7 +371,7 @@ async def test_dropout_then_stale_goes_unavailable(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen")], stale_limit=10)
+    await setup_zone(hass, [room("kitchen")], stale_limit=10)
     await advance(hass, freezer, 30)
 
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
@@ -383,7 +397,7 @@ async def test_all_rooms_open_uses_plain_average(
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     hass.states.async_set("input_boolean.windows_open", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room("kitchen", **{CONF_OPENING_SENSORS: ["input_boolean.windows_open"]}),
@@ -404,24 +418,24 @@ async def test_all_rooms_open_uses_plain_average(
 
 async def test_repairs_issue_when_no_occupancy_source(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_instance(hass, [room("kitchen")])
-    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"no_occupancy_source_{entry.entry_id}")
+    entry = await setup_zone(hass, [room("kitchen")])
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id(entry))
     assert issue is not None
     assert issue.translation_placeholders == {"zone": "Home", "rooms": "Kitchen"}
 
 
 async def test_no_repairs_issue_when_people_exist(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert ir.async_get(hass).async_get_issue(
-        DOMAIN, f"no_occupancy_source_{entry.entry_id}"
+        DOMAIN, issue_id(entry)
     ) is None
 
 
 async def test_removing_a_room_removes_its_entity(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    entry = await setup_instance(hass, [room("kitchen"), room("office")])
+    entry = await setup_zone(hass, [room("kitchen"), room("office")])
     registry = er.async_get(hass)
     assert registry.async_get(OFFICE_WEIGHT) is not None
 
@@ -433,21 +447,18 @@ async def test_removing_a_room_removes_its_entity(hass: HomeAssistant) -> None:
 
 
 async def test_weights_restored_after_restart(hass: HomeAssistant) -> None:
-    mock_restore_cache_with_extra_data(
+    restore_room_state(
         hass,
-        [
-            (
-                State(KITCHEN_WEIGHT, "0.8"),
-                {
-                    "weight": 0.8, "target": 1.0, "tau": 3.0, "status": "person",
-                    "last_occupied_state": "person", "last_known_temperature": 20.0,
-                    "dropout_since": None, "stale": False, "last_update": 12345.0,
-                },
-            )
-        ],
+        weight=0.8,
+        target=1.0,
+        tau=3.0,
+        status=Status.PERSON,
+        last_occupied_state=Status.PERSON,
+        last_known_temperature=20.0,
+        last_update=12345.0,
     )
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert float(kitchen.state) == pytest.approx(0.8)  # resumed; downtime ignored
     assert kitchen.attributes["last_occupied_state"] == "person"
@@ -460,7 +471,7 @@ async def test_grace_period_holds_weights_at_startup(
     hass.set_state(CoreState.not_running)
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
 
     hass.set_state(CoreState.running)
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
@@ -485,7 +496,7 @@ async def test_room_overrides_replace_zone_defaults(
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     hass.states.async_set("sensor.sam_area", "Office")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room("kitchen", **{CONF_OVERRIDES: {"tau_person_rise": 10, "w_person": 0.8}}),
@@ -507,7 +518,7 @@ async def test_room_overrides_replace_zone_defaults(
 async def test_room_added_through_configure_appears_after_save(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    entry = await setup_instance(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ false }}"})])
+    entry = await setup_zone(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ false }}"})])
     assert hass.states.get(OFFICE_WEIGHT) is None
 
     options = hass.config_entries.options
@@ -537,7 +548,7 @@ async def test_failing_templates_count_as_not_open_and_not_occupied(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room(
@@ -560,7 +571,7 @@ async def test_unavailable_template_result_is_not_open_and_not_logged(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture, result: str
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: result})])
+    await setup_zone(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: result})])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
     assert not [r for r in caplog.records if r.levelname in ("WARNING", "ERROR") and "OORT" in r.getMessage()]
 
@@ -569,7 +580,7 @@ async def test_unrecognised_template_result_is_not_open_and_warned_once(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "maybe"})])
+    await setup_zone(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "maybe"})])
     await advance(hass, freezer, 3)
     assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
     warnings = [r for r in caplog.records if r.levelname == "WARNING" and "maybe" in r.getMessage()]
@@ -592,7 +603,7 @@ async def test_unusable_temperature_counts_as_dropout(
 ) -> None:
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.kitchen_temperature", value, attributes)
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["temperature_available"] is False
     assert kitchen.attributes["status"] == "dropout"
@@ -603,7 +614,7 @@ async def test_any_of_several_occupancy_sensors_occupies_the_room(hass: HomeAssi
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_motion", "off")
     hass.states.async_set("input_boolean.kitchen_cooking", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room(
@@ -636,7 +647,7 @@ async def test_any_of_several_occupancy_sensors_occupies_the_room(hass: HomeAssi
 async def test_zones_are_independent(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     upstairs = MockConfigEntry(
         domain=DOMAIN,
         version=1,
@@ -660,7 +671,7 @@ async def test_temperature_sensor_attributes(
 ) -> None:
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     attributes = hass.states.get(TEMPERATURE).attributes
     assert attributes["contributing_rooms"] == 2
     assert attributes["total_weight"] == 0.0
@@ -675,38 +686,38 @@ async def test_temperature_sensor_attributes(
 async def test_area_name_matching_ignores_case_and_spaces(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "  KIT chen ")
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == ["Alex"]
 
 
 async def test_disabling_a_zone_clears_its_repairs_issue(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_instance(hass, [room("kitchen")])
+    entry = await setup_zone(hass, [room("kitchen")])
     issues = ir.async_get(hass)
-    issue_id = f"no_occupancy_source_{entry.entry_id}"
-    assert issues.async_get_issue(DOMAIN, issue_id) is not None
+    repairs_id = issue_id(entry)
+    assert issues.async_get_issue(DOMAIN, repairs_id) is not None
 
     await hass.config_entries.async_set_disabled_by(
         entry.entry_id, ConfigEntryDisabler.USER
     )
     await hass.async_block_till_done()
-    assert issues.async_get_issue(DOMAIN, issue_id) is None
+    assert issues.async_get_issue(DOMAIN, repairs_id) is None
 
     await hass.config_entries.async_set_disabled_by(entry.entry_id, None)
     await hass.async_block_till_done()
-    assert issues.async_get_issue(DOMAIN, issue_id) is not None, "set again when enabled"
+    assert issues.async_get_issue(DOMAIN, repairs_id) is not None, "set again when enabled"
 
 
 async def test_deleting_a_zone_clears_its_repairs_issue(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_instance(hass, [room("kitchen")])
+    entry = await setup_zone(hass, [room("kitchen")])
     issues = ir.async_get(hass)
-    issue_id = f"no_occupancy_source_{entry.entry_id}"
-    assert issues.async_get_issue(DOMAIN, issue_id) is not None
+    repairs_id = issue_id(entry)
+    assert issues.async_get_issue(DOMAIN, repairs_id) is not None
 
     assert await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
-    assert issues.async_get_issue(DOMAIN, issue_id) is None
+    assert issues.async_get_issue(DOMAIN, repairs_id) is None
 
 
 async def test_corrupt_saved_state_is_ignored(hass: HomeAssistant) -> None:
@@ -714,13 +725,13 @@ async def test_corrupt_saved_state_is_ignored(hass: HomeAssistant) -> None:
         hass, [(State(KITCHEN_WEIGHT, "0.8"), {"weight": 0.8})]  # no status etc.
     )
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     assert weight(hass, KITCHEN_WEIGHT) == 0.0  # starts fresh
 
 
 async def test_person_with_missing_entity_is_in_no_room(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.does_not_exist")])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.does_not_exist")])
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["people"] == []
     assert kitchen.attributes["person_present"] is False
@@ -730,7 +741,7 @@ async def test_renaming_a_zone_renames_its_device_not_its_entity_ids(
     hass: HomeAssistant,
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_instance(hass, [room("kitchen")])
+    entry = await setup_zone(hass, [room("kitchen")])
     hass.config_entries.async_update_entry(entry, title="Upstairs")
     await hass.async_block_till_done()
 
@@ -756,7 +767,7 @@ async def test_person_with_unusable_location_is_in_no_room(
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", state, attributes)
     fields = {CONF_SOURCE_ATTRIBUTE: attribute} if attribute else {}
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area", **fields)])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area", **fields)])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == []
 
 
@@ -766,7 +777,7 @@ async def test_person_leaving_an_occupied_room_uses_person_fall(
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     hass.states.async_set("binary_sensor.kitchen_motion", "on")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}),
@@ -794,7 +805,7 @@ async def test_total_outage_with_instant_dropout_holds_until_stale_limit(
     """With a dropout tau of 0, recent readings still carry the output to the stale limit."""
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    await setup_instance(hass, [room("kitchen"), room("office")], tau_dropout=0, stale_limit=15)
+    await setup_zone(hass, [room("kitchen"), room("office")], tau_dropout=0, stale_limit=15)
     await advance(hass, freezer, 30)
 
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
@@ -819,23 +830,20 @@ async def test_restored_reading_used_only_after_a_short_downtime(
 ) -> None:
     """A reboot is bridged by saved readings; a long outage isn't."""
     now = dt_util.utcnow().timestamp()
-    mock_restore_cache_with_extra_data(
+    restore_room_state(
         hass,
-        [
-            (
-                State(KITCHEN_WEIGHT, "1.0"),
-                {
-                    "weight": 1.0, "target": 1.0, "tau": 3.0, "status": "person",
-                    "last_occupied_state": "person", "last_known_temperature": 30.0,
-                    "dropout_since": None, "stale": False, "last_update": now,
-                    "last_seen": now - downtime_minutes * 60,
-                },
-            )
-        ],
+        weight=1.0,
+        target=1.0,
+        tau=3.0,
+        status=Status.PERSON,
+        last_occupied_state=Status.PERSON,
+        last_known_temperature=30.0,
+        last_update=now,
+        last_seen=now - downtime_minutes * 60,
     )
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)  # not back yet
     set_temperature(hass, "office", "20")
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["temperature_stale"] is not reading_used
     temperature = float(hass.states.get(TEMPERATURE).state)
@@ -855,7 +863,7 @@ async def test_temperature_change_does_not_rewrite_room_weights(
 ) -> None:
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     await advance(hass, freezer, 5)
     kitchen_before = hass.states.get(KITCHEN_WEIGHT)
     temperature_before = hass.states.get(TEMPERATURE)
@@ -876,7 +884,7 @@ async def test_status_change_rewrites_that_room_at_once(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     hass.states.async_set("binary_sensor.kitchen_motion", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}), room("office")],
     )
@@ -896,7 +904,7 @@ async def test_stored_values_are_rounded(
     set_temperature(hass, "kitchen", "20.123456")
     set_temperature(hass, "office", "24.987654")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
     await advance(hass, freezer, 2)
     weight_text = hass.states.get(KITCHEN_WEIGHT).state
     assert len(weight_text.split(".")[1]) <= 4, weight_text
@@ -908,7 +916,7 @@ async def test_settled_weights_stop_changing(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     await advance(hass, freezer, 120)
     before = hass.states.get(KITCHEN_WEIGHT)
     await advance(hass, freezer, 5)
@@ -918,7 +926,7 @@ async def test_settled_weights_stop_changing(
 
 async def test_total_weight_is_not_recorded(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     temperature = hass.states.get(TEMPERATURE)
     assert "total_weight" in temperature.attributes  # still on the entity
     assert "total_weight" in temperature.state_info["unrecorded_attributes"]
@@ -931,7 +939,7 @@ async def test_temperature_sensor_not_rewritten_when_nothing_visible_changes(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")]
     )
     await advance(hass, freezer, 60)
@@ -949,7 +957,7 @@ async def test_changing_unrecognised_template_result_warns_once(
     """A template returning a new unrecognised value each time warns only once."""
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.window_battery", "50%")
-    await setup_instance(
+    await setup_zone(
         hass,
         [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ states('sensor.window_battery') }}"})],
     )
@@ -987,30 +995,28 @@ async def test_opening_template_follows_home_assistants_true_rule(
 ) -> None:
     """The README and form text document this rule; keep them in step."""
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: template})])
+    await setup_zone(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: template})])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is opened
 
 
 async def test_person_fall_carries_on_after_a_restart(hass: HomeAssistant) -> None:
     """Across a restart, the saved tau name keeps a room that a person left on person fall."""
     now = dt_util.utcnow().timestamp()
-    mock_restore_cache_with_extra_data(
+    restore_room_state(
         hass,
-        [
-            (
-                State(KITCHEN_WEIGHT, "0.8"),
-                {
-                    "weight": 0.8, "target": 0.5, "tau": 3.0, "tau_name": "person_fall",
-                    "status": "occupied", "last_occupied_state": "occupied",
-                    "last_known_temperature": 20.0, "last_seen": now,
-                    "dropout_since": None, "stale": False, "last_update": now,
-                },
-            )
-        ],
+        weight=0.8,
+        target=0.5,
+        tau=3.0,
+        tau_name=TauName.PERSON_FALL,
+        status=Status.OCCUPIED,
+        last_occupied_state=Status.OCCUPIED,
+        last_known_temperature=20.0,
+        last_seen=now,
+        last_update=now,
     )
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_motion", "on")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]})]
     )
     kitchen = hass.states.get(KITCHEN_WEIGHT)
@@ -1024,7 +1030,7 @@ async def test_room_going_stale_is_written_on_the_next_event_not_just_the_timer(
     """Staleness is part of what a weight sensor shows, so any update writes it at once."""
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     await advance(hass, freezer, 5)
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
     await hass.async_block_till_done()
@@ -1047,7 +1053,7 @@ async def test_unit_change_without_reload_keeps_the_output_right(
 ) -> None:
     """The zone's unit is fixed at load, so a switch can't double-convert its output."""
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     hass.config.units = US_CUSTOMARY_SYSTEM  # changed without the zone reloading
     set_temperature(hass, "kitchen", "20.5")  # the sensor still reports °C
     await hass.async_block_till_done()
@@ -1059,7 +1065,7 @@ async def test_unit_change_without_reload_keeps_the_output_right(
 async def test_unit_system_change_and_reload_never_double_convert(hass: HomeAssistant) -> None:
     """The zone keeps the unit it was created with, across reloads."""
     set_temperature(hass, "kitchen", "20.5")
-    entry = await setup_instance(hass, [room("kitchen")])
+    entry = await setup_zone(hass, [room("kitchen")])
     await hass.config.async_update(unit_system="us_customary")
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
@@ -1076,23 +1082,20 @@ async def test_saved_reading_is_converted_if_the_unit_changed_while_down(
     hass: HomeAssistant,
 ) -> None:
     now = dt_util.utcnow().timestamp()
-    mock_restore_cache_with_extra_data(
+    restore_room_state(
         hass,
-        [
-            (
-                State(KITCHEN_WEIGHT, "1.0"),
-                {
-                    "weight": 1.0, "target": 1.0, "tau": 3.0, "status": "person",
-                    "last_occupied_state": "person", "last_known_temperature": 20.0,
-                    "last_seen": now, "dropout_since": None, "stale": False,
-                    "last_update": now, "temperature_unit": "°C",
-                },
-            )
-        ],
+        weight=1.0,
+        target=1.0,
+        tau=3.0,
+        status=Status.PERSON,
+        last_occupied_state=Status.PERSON,
+        last_known_temperature=20.0,
+        last_seen=now,
+        last_update=now,
     )
     hass.config.units = US_CUSTOMARY_SYSTEM  # a zone created now works in °F
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)  # not back yet
-    entry = await setup_instance(hass, [room("kitchen")])
+    entry = await setup_zone(hass, [room("kitchen")])
     assert entry.runtime_data.unit == "°F"
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(68.0, abs=0.01)
 
@@ -1116,7 +1119,7 @@ def _record_states(hass: HomeAssistant) -> list[tuple[str, State]]:
 async def test_setup_never_writes_a_placeholder_state(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     seen = _record_states(hass)
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     await hass.async_block_till_done()
     temperatures = [state.state for entity_id, state in seen if entity_id == TEMPERATURE]
     assert STATE_UNAVAILABLE not in temperatures
@@ -1127,7 +1130,7 @@ async def test_setup_never_writes_a_placeholder_state(hass: HomeAssistant) -> No
 async def test_reload_never_writes_a_placeholder_state(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    entry = await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     await hass.async_block_till_done()
     seen = _record_states(hass)
     assert await hass.config_entries.async_reload(entry.entry_id)
@@ -1149,7 +1152,7 @@ async def test_open_room_does_not_drive_the_output_during_an_outage(
     set_temperature(hass, "kitchen", "12")  # the open room (e.g. a sunroom with the door open)
     set_temperature(hass, "office", "20")
     hass.states.async_set("binary_sensor.kitchen_door", "on")
-    await setup_instance(
+    await setup_zone(
         hass,
         [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_door"]}), room("office")],
         stale_limit=60,
@@ -1173,7 +1176,7 @@ async def test_open_room_does_not_drive_the_output_during_an_outage(
 
 async def test_non_finite_reading_keeps_the_last_good_one(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "21")
-    await setup_instance(hass, [room("kitchen")])
+    await setup_zone(hass, [room("kitchen")])
     set_temperature(hass, "kitchen", "nan")
     await hass.async_block_till_done()
     assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_available"] is False
@@ -1184,30 +1187,27 @@ async def test_reading_that_overflows_on_conversion_is_unusable(hass: HomeAssist
     hass.config.units = US_CUSTOMARY_SYSTEM  # zone in °F
     set_temperature(hass, "office", "70", unit="°F")
     set_temperature(hass, "kitchen", "1e308")  # finite in °C, inf in °F
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_available"] is False
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(70.0)
 
 
 async def test_saved_non_finite_reading_is_not_restored(hass: HomeAssistant) -> None:
     now = dt_util.utcnow().timestamp()
-    mock_restore_cache_with_extra_data(
+    restore_room_state(
         hass,
-        [
-            (
-                State(KITCHEN_WEIGHT, "1.0"),
-                {
-                    "weight": 1.0, "target": 1.0, "tau": 3.0, "status": "person",
-                    "last_occupied_state": "person", "last_known_temperature": math.nan,
-                    "last_seen": now, "dropout_since": None, "stale": False,
-                    "last_update": now, "temperature_unit": "°C",
-                },
-            )
-        ],
+        weight=1.0,
+        target=1.0,
+        tau=3.0,
+        status=Status.PERSON,
+        last_occupied_state=Status.PERSON,
+        last_known_temperature=math.nan,
+        last_seen=now,
+        last_update=now,
     )
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
     set_temperature(hass, "office", "24")
-    await setup_instance(hass, [room("kitchen"), room("office")])
+    await setup_zone(hass, [room("kitchen"), room("office")])
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(24.0)
 
 
@@ -1215,7 +1215,7 @@ async def test_one_failing_entity_does_not_stop_the_others(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_instance(hass, [room("kitchen")])
+    entry = await setup_zone(hass, [room("kitchen")])
 
     def fail() -> None:
         raise ValueError("boom")
@@ -1234,7 +1234,7 @@ async def test_re_added_room_starts_at_zero_not_its_old_state(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     office = room("office", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})
-    entry = await setup_instance(hass, [room("kitchen"), office])
+    entry = await setup_zone(hass, [room("kitchen"), office])
     await advance(hass, freezer, 60)
     assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.5, abs=0.01)
 
@@ -1260,7 +1260,7 @@ async def test_re_added_room_starts_at_zero_not_its_old_state(
 async def test_first_state_reflects_the_occupancy_template(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     seen = _record_states(hass)
-    await setup_instance(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
+    await setup_zone(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
     statuses = [state.attributes["status"] for entity_id, state in seen if entity_id == KITCHEN_WEIGHT]
     assert statuses and set(statuses) == {"occupied"}
 
@@ -1268,7 +1268,7 @@ async def test_first_state_reflects_the_occupancy_template(hass: HomeAssistant) 
 async def test_first_state_reflects_the_opening_template(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     seen = _record_states(hass)
-    await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ true }}"})])
+    await setup_zone(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ true }}"})])
     first = next(state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT)
     assert first.attributes["open"] is True
     assert first.attributes["status"] == "open"
@@ -1278,22 +1278,20 @@ async def test_person_fall_carries_on_after_a_restart_with_an_occupancy_template
     hass: HomeAssistant,
 ) -> None:
     now = dt_util.utcnow().timestamp()
-    mock_restore_cache_with_extra_data(
+    restore_room_state(
         hass,
-        [
-            (
-                State(KITCHEN_WEIGHT, "0.8"),
-                {
-                    "weight": 0.8, "target": 0.5, "tau": 3.0, "tau_name": "person_fall",
-                    "status": "occupied", "last_occupied_state": "occupied",
-                    "last_known_temperature": 20.0, "last_seen": now,
-                    "dropout_since": None, "stale": False, "last_update": now,
-                },
-            )
-        ],
+        weight=0.8,
+        target=0.5,
+        tau=3.0,
+        tau_name=TauName.PERSON_FALL,
+        status=Status.OCCUPIED,
+        last_occupied_state=Status.OCCUPIED,
+        last_known_temperature=20.0,
+        last_seen=now,
+        last_update=now,
     )
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
+    await setup_zone(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["tau_name"] == "person_fall"
 
 
@@ -1301,7 +1299,7 @@ async def test_template_failing_at_startup_is_logged_once(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     set_temperature(hass, "kitchen", "20")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ states('x') | float }}"})]
     )
     kitchen = hass.states.get(KITCHEN_WEIGHT)
@@ -1321,7 +1319,7 @@ async def test_temperature_readings_alone_do_not_rewrite_the_temperature_sensor(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
     await advance(hass, freezer, 3)  # the kitchen weight is still rising
     seen = _record_states(hass)
     for i in range(11):  # 55 s of readings; the output stays 20.0
@@ -1346,7 +1344,7 @@ async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "20")  # same reading, so the value can't change
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
     await advance(hass, freezer, 3)
     seen = _record_states(hass)
     freezer.tick(timedelta(seconds=30))
@@ -1368,7 +1366,7 @@ async def test_open_and_dropout_are_separate_statuses(hass: HomeAssistant) -> No
     """Status says why a room is left out; open wins over dropout."""
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_window", "off")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"]})]
     )
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
@@ -1391,7 +1389,7 @@ async def test_open_room_leaves_the_output_at_once_with_deactivate_tau_0(
     set_temperature(hass, "office", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     hass.states.async_set("binary_sensor.kitchen_window", "off")
-    await setup_instance(
+    await setup_zone(
         hass,
         [
             room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"]}),
@@ -1416,7 +1414,7 @@ async def test_dropped_out_room_leaves_the_output_at_once_with_dropout_tau_0(
     set_temperature(hass, "kitchen", "10")
     set_temperature(hass, "office", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(
+    await setup_zone(
         hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")],
         tau_dropout=0.0,
     )
@@ -1510,5 +1508,5 @@ async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssis
     )
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8)

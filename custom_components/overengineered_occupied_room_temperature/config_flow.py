@@ -220,7 +220,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
     _defaults: dict[str, Any]
     _rooms: dict[str, dict[str, Any]]
     _people: dict[str, dict[str, Any]]
-    _room_id: str | None
+    _area_id: str | None
     _person_id: str | None
     _pending_person: dict[str, Any]
 
@@ -248,7 +248,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
 
     async def async_step_menu(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """The zone menu; *Finish*/*Save* only once there's a room."""
-        options = [CONF_DEFAULTS, CONF_ROOMS, CONF_PEOPLE]
+        options = ["defaults", "rooms", "people"]
         if self._rooms:
             options.append(self.finish_step)
         rooms = sorted(self._area_name(area_id) for area_id in self._rooms)
@@ -256,6 +256,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
         return self.async_show_menu(
             step_id="menu",
             menu_options=options,
+            # Placeholder values aren't translated, so these two words stay English.
             description_placeholders={
                 "rooms": ", ".join(rooms) or "none yet",
                 "people": ", ".join(people) or "none",
@@ -275,7 +276,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
                 return await self.async_step_menu()
             errors["base"] = error
         return self.async_show_form(
-            step_id=CONF_DEFAULTS,
+            step_id="defaults",
             data_schema=self.add_suggested_values_to_schema(
                 DEFAULTS_SCHEMA,
                 user_input or {**self._defaults, CONF_ZONE_SETTINGS: self._zone},
@@ -292,16 +293,18 @@ class ZoneMenu(ConfigEntryBaseFlow):
             if choice == CHOICE_DONE:
                 return await self.async_step_menu()
             if choice == CHOICE_ADD:
-                self._room_id = None
+                self._area_id = None
                 return await self.async_step_room()
-            self._room_id = choice
+            self._area_id = choice
             return await self.async_step_room_edit()
         items = {area_id: self._area_name(area_id) for area_id in self._rooms}
         return self.async_show_form(
-            step_id=CONF_ROOMS,
+            step_id="rooms",
             data_schema=_choice_schema(CONF_ROOM, items, "Add a new room"),
         )
 
+    # Rooms have separate add and edit steps because the area is chosen only when
+    # a room is added; people use one step for both.
     async def async_step_room(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add a room."""
         return await self._async_room_form("room", user_input, None)
@@ -310,7 +313,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Edit or remove a room. Its area is fixed."""
-        return await self._async_room_form("room_edit", user_input, self._room_id)
+        return await self._async_room_form("room_edit", user_input, self._area_id)
 
     async def _async_room_form(
         self, step_id: str, user_input: dict[str, Any] | None, area_id: str | None
@@ -374,7 +377,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
             return await self.async_step_person()
         items = {person_id: person[CONF_NAME] for person_id, person in self._people.items()}
         return self.async_show_form(
-            step_id=CONF_PEOPLE,
+            step_id="people",
             data_schema=_choice_schema(CONF_PERSON, items, "Add a new person"),
         )
 
@@ -402,7 +405,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
         if suggested is None and person_id is not None:
             suggested = self._people[person_id]
         return self.async_show_form(
-            step_id=CONF_PERSON,
+            step_id="person",
             data_schema=self.add_suggested_values_to_schema(
                 _person_schema(new=person_id is None), suggested
             ),

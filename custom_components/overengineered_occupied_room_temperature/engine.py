@@ -100,14 +100,22 @@ class RoomState:
     tau_name: TauName | None = None
     """Which tau that is; None before the first update."""
     status: Status = Status.UNOCCUPIED
+    """The status driving the weight at the last update (``room_status``)."""
     last_occupied_state: Status | None = None
+    """The last ``person`` or ``occupied`` status, which picks the fall tau."""
     last_known_temperature: float | None = None
+    """The last valid reading, in the zone's unit; kept through a dropout."""
     last_seen: float | None = None
     """When the temperature sensor last had a valid reading. Saved across restarts,
     so a reading older than the stale limit isn't reused after a long downtime."""
     dropout_since: float | None = None
+    """Start of the current dropout for the stale clock: when the sensor was last
+    seen working, or when the dropout was noticed if it never was."""
     stale: bool = False
+    """The last reading is older than the stale limit, so it isn't used."""
     last_update: float | None = None
+    """When the room was last stepped; None after a restore, so downtime isn't
+    applied as elapsed time."""
 
     @property
     def usable_temperature(self) -> float | None:
@@ -181,25 +189,6 @@ def select_tau_name(
             return TauName.PERSON_FALL
         return TauName.OCCUPANCY_FALL
     return TauName.DEACTIVATE if status is Status.OPEN else TauName.DROPOUT
-
-
-def select_tau(
-    status: Status,
-    last_occupied_state: Status | None,
-    taus: Taus,
-    *,
-    previous_status: Status | None = None,
-    previous_tau_name: TauName | None = None,
-) -> float:
-    """Tau (minutes) used to approach the target for ``status``."""
-    name = select_tau_name(
-        status,
-        last_occupied_state,
-        previous_status=previous_status,
-        previous_tau_name=previous_tau_name,
-    )
-    tau: float = getattr(taus, name)
-    return tau
 
 
 def step_room(
@@ -279,7 +268,7 @@ def fallback_epsilon(base_weights: Iterable[float]) -> float:
 
 @dataclass(frozen=True, slots=True)
 class Aggregate:
-    """The instance's weighted temperature and its attributes."""
+    """The zone's weighted temperature and its attributes."""
 
     temperature: float | None
     """None means the sensor is unavailable: nothing could be averaged."""
