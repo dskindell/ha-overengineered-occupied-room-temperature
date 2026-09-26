@@ -39,7 +39,7 @@
         "data_description": {
           "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Default 3.",
           "tau_person_fall": "Minutes for the weight to fall back after the last tracked person leaves. Larger keeps the room counted during short trips out. Default 3.",
-          "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is). Default 10.",
+          "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is); also for an empty room climbing back to the unoccupied weight. Default 10.",
           "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Default 8.",
           "tau_deactivate": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Default 1.",
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default 5.",
@@ -96,7 +96,7 @@
             "data_description": {
               "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Leave blank to use the zone's default.",
               "tau_person_fall": "Minutes for the weight to fall back after the last tracked person leaves. Larger keeps the room counted during short trips out. Leave blank to use the zone's default.",
-              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is). Leave blank to use the zone's default.",
+              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is); also for an empty room climbing back to the unoccupied weight. Leave blank to use the zone's default.",
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_deactivate": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
@@ -144,7 +144,7 @@
             "data_description": {
               "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Leave blank to use the zone's default.",
               "tau_person_fall": "Minutes for the weight to fall back after the last tracked person leaves. Larger keeps the room counted during short trips out. Leave blank to use the zone's default.",
-              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is). Leave blank to use the zone's default.",
+              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is); also for an empty room climbing back to the unoccupied weight. Leave blank to use the zone's default.",
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_deactivate": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
@@ -207,7 +207,7 @@
       "base_weight_too_small": "The unoccupied weight must be at least 0.001.",
       "value_not_finite": "Enter a number (not NaN or infinity).",
       "tau_too_large": "Taus can be at most 1440 minutes (a day).",
-      "weight_too_large": "Weights can be at most 1000.",
+      "weight_too_large": "Weights can be at most 1.",
       "stale_limit_too_large": "The stale temperature limit can be at most 1440 minutes (a day)."
     },
     "abort": {
@@ -244,7 +244,7 @@
         "data_description": {
           "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Default 3.",
           "tau_person_fall": "Minutes for the weight to fall back after the last tracked person leaves. Larger keeps the room counted during short trips out. Default 3.",
-          "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is). Default 10.",
+          "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is); also for an empty room climbing back to the unoccupied weight. Default 10.",
           "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Default 8.",
           "tau_deactivate": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Default 1.",
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default 5.",
@@ -301,7 +301,7 @@
             "data_description": {
               "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Leave blank to use the zone's default.",
               "tau_person_fall": "Minutes for the weight to fall back after the last tracked person leaves. Larger keeps the room counted during short trips out. Leave blank to use the zone's default.",
-              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is). Leave blank to use the zone's default.",
+              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is); also for an empty room climbing back to the unoccupied weight. Leave blank to use the zone's default.",
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_deactivate": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
@@ -349,7 +349,7 @@
             "data_description": {
               "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Leave blank to use the zone's default.",
               "tau_person_fall": "Minutes for the weight to fall back after the last tracked person leaves. Larger keeps the room counted during short trips out. Leave blank to use the zone's default.",
-              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is). Leave blank to use the zone's default.",
+              "tau_occupancy_rise": "Minutes to move up to the occupied weight once an occupancy sensor or template says someone is there (and no tracked person is); also for an empty room climbing back to the unoccupied weight. Leave blank to use the zone's default.",
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_deactivate": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
@@ -412,7 +412,7 @@
       "base_weight_too_small": "The unoccupied weight must be at least 0.001.",
       "value_not_finite": "Enter a number (not NaN or infinity).",
       "tau_too_large": "Taus can be at most 1440 minutes (a day).",
-      "weight_too_large": "Weights can be at most 1000.",
+      "weight_too_large": "Weights can be at most 1.",
       "stale_limit_too_large": "The stale temperature limit can be at most 1440 minutes (a day)."
     }
   },

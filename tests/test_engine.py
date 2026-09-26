@@ -281,6 +281,32 @@ class TestStepRoom:
         assert state.weight == pytest.approx(CONFIG.weights.base, abs=1e-9)
 
 
+class TestEmptyRoomAfterAnOpenPeriod:
+    """An empty room below its unoccupied weight is rising."""
+
+    WEIGHTS = Weights(person=1.0, occupied=0.5, base=0.3)
+
+    def _after_open(self, minutes: float) -> RoomState:
+        config = RoomConfig(weights=self.WEIGHTS)
+        state = run(RoomState(), inputs(person=True), 60)  # a person room at ~1.0
+        opened = step_room(state, inputs(active=False, person=True), config, 60 * MINUTE)
+        return step_room(opened, inputs(active=False), config, (60 + minutes) * MINUTE)
+
+    def test_rises_on_occupancy_rise_after_a_long_open_period(self) -> None:
+        config = RoomConfig(weights=self.WEIGHTS)
+        opened = self._after_open(60)  # faded to ~0
+        closed = step_room(opened, inputs(), config, 121 * MINUTE)
+        assert closed.weight < closed.target
+        assert (closed.status, closed.tau_name) == (Status.UNOCCUPIED, TauName.OCCUPANCY_RISE)
+
+    def test_still_falls_on_person_fall_after_a_brief_open_period(self) -> None:
+        config = RoomConfig(weights=self.WEIGHTS)
+        opened = self._after_open(0.1)  # barely faded from ~1.0
+        closed = step_room(opened, inputs(), config, 60.2 * MINUTE)
+        assert closed.weight > closed.target
+        assert closed.tau_name is TauName.PERSON_FALL
+
+
 class TestZeroTauIsInstant:
     """A tau of 0 reaches the new target in the same step."""
 

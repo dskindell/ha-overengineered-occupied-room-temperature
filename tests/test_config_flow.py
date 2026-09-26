@@ -165,7 +165,7 @@ async def test_create_zone_full_journey(hass: HomeAssistant) -> None:
 
     await flow.menu(CONF_DEFAULTS)
     assert flow.step == CONF_DEFAULTS
-    await flow.submit({**DEFAULTS, "w_person": 2.0})
+    await flow.submit({**DEFAULTS, "w_person": 0.8})
     assert flow.step == "menu"
 
     await flow.add_room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]})
@@ -182,7 +182,7 @@ async def test_create_zone_full_journey(hass: HomeAssistant) -> None:
     assert result["title"] == "Home"
     assert result["data"] == {CONF_NAME: "Home", "temperature_unit": "°C"}
     options = result["options"]
-    assert options[CONF_DEFAULTS] == {**DEFAULTS, "w_person": 2.0}
+    assert options[CONF_DEFAULTS] == {**DEFAULTS, "w_person": 0.8}
     assert options[CONF_ROOMS] == {
         "kitchen": room_data("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]})
     }
@@ -271,7 +271,7 @@ async def test_defaults_form_rejects_nan(hass: HomeAssistant, key: str) -> None:
 
 @pytest.mark.parametrize(
     "settings",
-    [{"tau_person_rise": 1441}, {"w_person": 1001}, {"stale_limit": 1441}, {"w_person": "inf"}],
+    [{"tau_person_rise": 1441}, {"w_person": 1.5}, {"stale_limit": 1441}, {"w_person": "inf"}],
 )
 async def test_defaults_form_rejects_values_over_the_limits(
     hass: HomeAssistant, settings: dict[str, Any]
@@ -286,7 +286,7 @@ async def test_defaults_form_accepts_values_at_the_limits(hass: HomeAssistant) -
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)
     await flow.submit(
-        {**DEFAULTS, "tau_occupancy_fall": 1440, "w_person": 1000, "stale_limit": 1440}
+        {**DEFAULTS, "tau_occupancy_fall": 1440, "w_person": 1, "stale_limit": 1440}
     )
     assert flow.step == "menu"
 
@@ -304,9 +304,9 @@ async def test_room_override_rejects_nan(hass: HomeAssistant) -> None:
         ({"w_person": math.inf}, "value_not_finite"),
         ({"tau_person_rise": math.nan}, "value_not_finite"),
         ({"tau_deactivate": 1440.5}, "tau_too_large"),
-        ({"w_base": 1000.5}, "weight_too_large"),
+        ({"w_base": 1.01}, "weight_too_large"),
         ({"stale_limit": 1440.5}, "stale_limit_too_large"),
-        ({"tau_deactivate": 1440, "w_base": 1000, "stale_limit": 1440}, None),
+        ({"tau_deactivate": 1440, "w_base": 1, "stale_limit": 1440}, None),
     ],
 )
 def test_settings_limits_also_checked_outside_the_form(
@@ -552,7 +552,7 @@ async def test_remove_person(hass: HomeAssistant) -> None:
 
 
 async def test_configure_defaults_prefilled_and_saved(hass: HomeAssistant) -> None:
-    entry = zone_entry(hass, w_person=2.0)
+    entry = zone_entry(hass, w_person=0.8)
     flow = await start_configure(hass, entry)
     await flow.menu(CONF_DEFAULTS)
     suggested = {
@@ -560,10 +560,10 @@ async def test_configure_defaults_prefilled_and_saved(hass: HomeAssistant) -> No
         for key in flow.result["data_schema"].schema
         if key.description
     }
-    assert suggested["w_person"] == 2.0
-    await flow.submit({**DEFAULTS, "w_person": 3.0})
+    assert suggested["w_person"] == 0.8
+    await flow.submit({**DEFAULTS, "w_person": 0.9})
     await flow.menu("save")
-    assert entry.options[CONF_DEFAULTS]["w_person"] == 3.0
+    assert entry.options[CONF_DEFAULTS]["w_person"] == 0.9
     assert entry.options[CONF_ROOMS] == {"kitchen": room_data("kitchen")}
 
 

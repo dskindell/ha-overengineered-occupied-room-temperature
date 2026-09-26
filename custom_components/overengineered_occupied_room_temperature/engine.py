@@ -141,6 +141,7 @@ def select_tau_name(
     *,
     previous_status: Status | None = None,
     previous_tau_name: TauName | None = None,
+    rising: bool = False,
 ) -> TauName:
     """Which tau approaches the target for ``status``.
 
@@ -148,7 +149,9 @@ def select_tau_name(
     the choice is correct whatever order the weights are configured in. A room a
     tracked person has just left, but whose occupancy sensor is still on, is
     falling from ``person``: it uses person fall for as long as it stays
-    ``occupied``.
+    ``occupied``. An empty room *below* its unoccupied weight (after being
+    open or dropped out, or when new) is rising, so it uses occupancy rise
+.
     """
     if status is Status.PERSON:
         return TauName.PERSON_RISE
@@ -159,6 +162,8 @@ def select_tau_name(
             return TauName.PERSON_FALL
         return TauName.OCCUPANCY_RISE
     if status is Status.UNOCCUPIED:
+        if rising:
+            return TauName.OCCUPANCY_RISE
         if last_occupied_state is Status.PERSON:
             return TauName.PERSON_FALL
         return TauName.OCCUPANCY_FALL
@@ -230,14 +235,15 @@ def step_room(
         status if status in (Status.PERSON, Status.OCCUPIED) else state.last_occupied_state
     )
 
+    target = target_weight(status, config.weights)
     tau_name = select_tau_name(
         status,
         inputs,
         last_occupied_state,
         previous_status=state.status,
         previous_tau_name=state.tau_name,
+        rising=weight < target,
     )
-    target = target_weight(status, config.weights)
     tau = getattr(config.taus, tau_name)
     if tau <= 0 and not hold:
         # A tau of 0 means instantly: reach the new target now, not at the next update.

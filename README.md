@@ -97,13 +97,13 @@ To rename a zone, use Home Assistant's own **Rename** in the zone's ⋮ menu. Th
 
 ### Defaults
 
-Times are in minutes. A **tau** is a time constant: roughly how long a room's weight takes to get two-thirds of the way to its new value — smaller reacts faster, larger is smoother. **Weights** say how much each room counts; only their ratios matter.
+Times are in minutes. A **tau** is a time constant: roughly how long a room's weight takes to get two-thirds of the way to its new value — smaller reacts faster, larger is smoother. **Weights** (0 to 1) say how much each room counts; only their ratios matter.
 
 | Field | Description | Default |
 |---|---|---|
 | Person rise tau | How fast a room's weight rises when a tracked person arrives. | 3 |
 | Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly inactive during that fall (for example while its temperature sensor reconnects after a restart), it finishes the fall at the occupancy rise speed instead. | 3 |
-| Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). | 10 |
+| Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). Also used when an empty room climbs back up to the unoccupied weight — for example after being open, or when it's new. | 10 |
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
 | Deactivate tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
 | Sensor dropout tau | How fast a room fades out when its temperature sensor becomes unavailable. `0` = instantly. | 5 |
@@ -112,7 +112,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Unoccupied weight | Target weight otherwise. Must be at least 0.001. | 0.001 |
 | Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. Zone-wide only. | 5 |
 
-Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1000.
+Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1.
 
 ### Rooms
 

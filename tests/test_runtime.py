@@ -170,7 +170,8 @@ async def test_person_pulls_the_temperature_toward_their_room(
     assert float(kitchen.state) == 0.0  # new rooms start at 0
     assert kitchen.attributes["tau_name"] == "person_rise"
     assert kitchen.attributes["tau"] == 3.0
-    assert hass.states.get(OFFICE_WEIGHT).attributes["tau_name"] == "occupancy_fall"
+    # An empty new room rises from 0 to the unoccupied weight.
+    assert hass.states.get(OFFICE_WEIGHT).attributes["tau_name"] == "occupancy_rise"
 
     await advance(hass, freezer, 3)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1), abs=5e-5)
@@ -475,7 +476,7 @@ async def test_room_overrides_replace_zone_defaults(
     await setup_instance(
         hass,
         [
-            room("kitchen", **{CONF_OVERRIDES: {"tau_person_rise": 10, "w_person": 2.0}}),
+            room("kitchen", **{CONF_OVERRIDES: {"tau_person_rise": 10, "w_person": 0.8}}),
             room("office"),
             person("Alex", "sensor.alex_area"),
             person("Sam", "sensor.sam_area"),
@@ -483,11 +484,11 @@ async def test_room_overrides_replace_zone_defaults(
     )
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["tau"] == 10
-    assert kitchen.attributes["target_weight"] == 2.0
+    assert kitchen.attributes["target_weight"] == 0.8
     assert hass.states.get(OFFICE_WEIGHT).attributes["tau"] == DEFAULTS["tau_person_rise"]
 
     await advance(hass, freezer, 10)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(2.0 * (1 - math.exp(-1)), abs=5e-5)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8 * (1 - math.exp(-1)), abs=5e-5)
     assert weight(hass, OFFICE_WEIGHT) == pytest.approx(1 - math.exp(-10 / 3), abs=5e-5)
 
 
