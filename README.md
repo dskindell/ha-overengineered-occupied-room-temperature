@@ -16,7 +16,7 @@ OORT doesn't talk to any hardware itself. It reads sensors and template results 
 - [Configuration](#configuration)
   - [Create a zone](#create-a-zone)
   - [Change a zone later](#change-a-zone-later)
-  - [Defaults](#defaults)
+  - [Settings](#settings)
   - [Rooms](#rooms)
   - [People](#people)
 - [Entities](#entities)
@@ -82,7 +82,7 @@ Rooms and people belong to their zone and are managed only from that zone's menu
 
 1. **Name the zone** (for example "Home"). The name must not already be used by another OORT zone.
 2. **The zone menu** opens, showing the rooms and people added so far:
-   - **Defaults** — the zone's taus, weights and stale-temperature limit (see below). Optional: the defaults work for most homes.
+   - **Settings** — the rooms' default taus and weights, and the zone-wide stale-temperature limit (see below). Optional: the defaults work for most homes.
    - **Rooms** — add, edit or remove rooms.
    - **People** — add, edit or remove people.
    - **Finish** — creates the zone. It appears once the zone has at least one room.
@@ -95,7 +95,9 @@ On the integration's page (**Settings → Devices & services → Overengineered 
 
 To rename a zone, use Home Assistant's own **Rename** in the zone's ⋮ menu. The device name follows; existing entity IDs keep the old name (rename them in the entity settings if you want).
 
-### Defaults
+### Settings
+
+The **Settings** screen has the rooms' defaults (every room uses these unless it overrides them) and, in its **Zone** section, settings for the whole zone.
 
 Times are in minutes. A **tau** is a time constant: roughly how long a room's weight takes to get two-thirds of the way to its new value — smaller reacts faster, larger is smoother. **Weights** (0 to 1) say how much each room counts; only their ratios matter.
 
@@ -110,7 +112,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
 | Unoccupied weight | Target weight otherwise. Must be at least 0.001. | 0.001 |
-| Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. Zone-wide only. | 5 |
+| Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. In the **Zone** section; rooms can't override it. | 5 |
 
 Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1.
 

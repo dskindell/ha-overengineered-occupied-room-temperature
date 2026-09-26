@@ -23,7 +23,9 @@ CONF_REMOVE: Final = "remove"
 CHOICE_ADD: Final = "add-new"
 CHOICE_DONE: Final = "back-to-menu"
 
-# Zone defaults (options[CONF_DEFAULTS]).
+# Settings: rooms' defaults in options[CONF_DEFAULTS], which a room can
+# override; zone-wide settings in options[CONF_ZONE_SETTINGS].
+CONF_ZONE_SETTINGS: Final = "zone"
 CONF_TAU_PERSON_RISE: Final = "tau_person_rise"
 CONF_TAU_PERSON_FALL: Final = "tau_person_fall"
 CONF_TAU_OCCUPANCY_RISE: Final = "tau_occupancy_rise"
@@ -91,7 +93,8 @@ class Setting:
     minimum_allowed: bool = True
     """Whether ``minimum`` itself is valid (False: must be greater)."""
     per_room: bool = True
-    """Whether a room can override it."""
+    """Whether a room can override it. Zone-wide settings (False) are stored under
+    ``options[CONF_ZONE_SETTINGS]`` and shown in the Settings screen's Zone section."""
 
 
 def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
@@ -124,12 +127,13 @@ SETTINGS: Final = (
 )
 DEFAULTS: Final[dict[str, float]] = {setting.key: setting.default for setting in SETTINGS}
 ROOM_SETTINGS: Final = tuple(setting.key for setting in SETTINGS if setting.per_room)
+ZONE_SETTINGS: Final = tuple(setting.key for setting in SETTINGS if not setting.per_room)
 
 
-def zone_defaults(stored: Mapping[str, float]) -> dict[str, float]:
-    """A zone's settings: stored values, with the default for any not stored.
+def with_defaults(stored: Mapping[str, float], keys: tuple[str, ...]) -> dict[str, float]:
+    """Stored values for ``keys``, with the default for any not stored.
 
     Keys no longer known are dropped, so settings can be added or removed
     without recreating zones.
     """
-    return {key: stored.get(key, default) for key, default in DEFAULTS.items()}
+    return {key: stored.get(key, DEFAULTS[key]) for key in keys}

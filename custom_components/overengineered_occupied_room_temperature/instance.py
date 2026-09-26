@@ -42,6 +42,7 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_DEFAULTS,
+    CONF_ZONE_SETTINGS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
@@ -59,7 +60,9 @@ from .const import (
     GRACE_PERIOD_SECONDS,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
-    zone_defaults,
+    ROOM_SETTINGS,
+    ZONE_SETTINGS,
+    with_defaults,
 )
 from .engine import (
     Aggregate,
@@ -168,8 +171,12 @@ class InstanceRuntime:
         self.entry = entry
         areas = ar.async_get(hass)
         options = entry.options
-        # Settings added since the zone was saved get their defaults.
-        defaults = zone_defaults(options.get(CONF_DEFAULTS, {}))
+        # Settings added since the zone was saved get their defaults; room
+        # defaults and zone-wide settings are stored apart.
+        defaults = {
+            **with_defaults(options.get(CONF_DEFAULTS, {}), ROOM_SETTINGS),
+            **with_defaults(options.get(CONF_ZONE_SETTINGS, {}), ZONE_SETTINGS),
+        }
         self.rooms: dict[str, Room] = {}
         for area_id, data in options[CONF_ROOMS].items():
             area = areas.async_get_area(area_id)

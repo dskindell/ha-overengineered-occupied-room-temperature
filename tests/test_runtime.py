@@ -32,6 +32,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CHOICE_DONE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
+    CONF_ZONE_SETTINGS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
@@ -48,6 +49,8 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_VALUE_TYPE,
     DEFAULTS,
     DOMAIN,
+    ROOM_SETTINGS,
+    ZONE_SETTINGS,
 )
 
 from custom_components.overengineered_occupied_room_temperature.engine import RoomState, Status
@@ -87,7 +90,8 @@ def person(name: str, source: str, **fields: Any) -> tuple[str, str, dict[str, A
 
 def zone_options(items: list[tuple[str, str, dict[str, Any]]], **settings: float) -> dict[str, Any]:
     return {
-        CONF_DEFAULTS: {**DEFAULTS, **settings},
+        CONF_DEFAULTS: {key: value for key, value in {**DEFAULTS, **settings}.items() if key in ROOM_SETTINGS},
+        CONF_ZONE_SETTINGS: {key: value for key, value in {**DEFAULTS, **settings}.items() if key in ZONE_SETTINGS},
         CONF_ROOMS: {key: data for kind, key, data in items if kind == "room"},
         CONF_PEOPLE: {key: data for kind, key, data in items if kind == "person"},
     }

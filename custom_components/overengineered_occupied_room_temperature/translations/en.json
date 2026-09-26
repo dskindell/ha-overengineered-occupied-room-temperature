@@ -15,15 +15,15 @@
         "title": "Zone setup",
         "description": "Rooms: {rooms}\nPeople: {people}\n\nAdd at least one room to finish.",
         "menu_options": {
-          "defaults": "Defaults",
+          "defaults": "Settings",
           "rooms": "Rooms",
           "people": "People",
           "finish": "Finish"
         }
       },
       "defaults": {
-        "title": "Defaults",
-        "description": "Settings used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+        "title": "Settings",
+        "description": "**Room defaults** are used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
         "data": {
           "tau_person_rise": "Person rise tau",
           "tau_person_fall": "Person fall tau",
@@ -33,8 +33,7 @@
           "tau_dropout": "Sensor dropout tau",
           "w_person": "Person weight",
           "w_occupied": "Occupied weight",
-          "w_base": "Unoccupied weight",
-          "stale_limit": "Stale temperature limit"
+          "w_base": "Unoccupied weight"
         },
         "data_description": {
           "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Default 3.",
@@ -45,8 +44,19 @@
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default 5.",
           "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Default 1.0.",
           "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Default 0.5.",
-          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Default 0.001.",
-          "stale_limit": "Minutes a room's last reading is still used after its temperature sensor drops out; after that the room is left out. Default 5."
+          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Default 0.001."
+        },
+        "sections": {
+          "zone": {
+            "name": "Zone",
+            "description": "Settings for the whole zone; rooms can't override these.",
+            "data": {
+              "stale_limit": "Stale temperature limit"
+            },
+            "data_description": {
+              "stale_limit": "Minutes a room's last reading is still used after its temperature sensor drops out; after that the room is left out. Default 5."
+            }
+          }
         }
       },
       "rooms": {
@@ -220,15 +230,15 @@
         "title": "Zone setup",
         "description": "Rooms: {rooms}\nPeople: {people}\n\nAdd at least one room to save.",
         "menu_options": {
-          "defaults": "Defaults",
+          "defaults": "Settings",
           "rooms": "Rooms",
           "people": "People",
           "save": "Save"
         }
       },
       "defaults": {
-        "title": "Defaults",
-        "description": "Settings used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+        "title": "Settings",
+        "description": "**Room defaults** are used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
         "data": {
           "tau_person_rise": "Person rise tau",
           "tau_person_fall": "Person fall tau",
@@ -238,8 +248,7 @@
           "tau_dropout": "Sensor dropout tau",
           "w_person": "Person weight",
           "w_occupied": "Occupied weight",
-          "w_base": "Unoccupied weight",
-          "stale_limit": "Stale temperature limit"
+          "w_base": "Unoccupied weight"
         },
         "data_description": {
           "tau_person_rise": "Minutes for a room's weight to move most of the way up to the person weight once a tracked person is in it. Smaller reacts faster; larger is smoother. Default 3.",
@@ -250,8 +259,19 @@
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default 5.",
           "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Default 1.0.",
           "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Default 0.5.",
-          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Default 0.001.",
-          "stale_limit": "Minutes a room's last reading is still used after its temperature sensor drops out; after that the room is left out. Default 5."
+          "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least 0.001. Default 0.001."
+        },
+        "sections": {
+          "zone": {
+            "name": "Zone",
+            "description": "Settings for the whole zone; rooms can't override these.",
+            "data": {
+              "stale_limit": "Stale temperature limit"
+            },
+            "data_description": {
+              "stale_limit": "Minutes a room's last reading is still used after its temperature sensor drops out; after that the room is left out. Default 5."
+            }
+          }
         }
       },
       "rooms": {

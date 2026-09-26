@@ -1,6 +1,6 @@
 """Config flow for OORT zones.
 
-Creating a zone and configuring it later use the same menu: *Defaults*,
+Creating a zone and configuring it later use the same menu: *Settings*,
 *Rooms*, *People*, then *Finish* (create) or *Save* (configure), offered only
 once the zone has a room. Rooms and people are kept in the zone's options
 and edited through one list form each.
@@ -32,6 +32,7 @@ from .const import (
     CHOICE_DONE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
+    CONF_ZONE_SETTINGS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
@@ -49,13 +50,13 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
-    DEFAULTS,
     DOMAIN,
     ROOM_SETTINGS,
     SETTINGS,
+    ZONE_SETTINGS,
     VALUE_TYPE_AREA_ID,
     VALUE_TYPE_AREA_NAME,
-    zone_defaults,
+    with_defaults,
 )
 
 SETTINGS_BY_KEY = {setting.key: setting for setting in SETTINGS}
@@ -98,7 +99,15 @@ def _without_empty(values: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value not in (None, "", [])}
 
 
-DEFAULTS_SCHEMA = vol.Schema({vol.Required(key): _number(key) for key in DEFAULTS})
+DEFAULTS_SCHEMA = vol.Schema(
+    {
+        **{vol.Required(key): _number(key) for key in ROOM_SETTINGS},
+        vol.Required(CONF_ZONE_SETTINGS): section(
+            vol.Schema({vol.Required(key): _number(key) for key in ZONE_SETTINGS}),
+            {"collapsed": False},
+        ),
+    }
+)
 
 NAME_SCHEMA = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()})
 
@@ -218,12 +227,18 @@ class ZoneMenu(ConfigEntryBaseFlow):
     def _load(self, options: Mapping[str, Any]) -> None:
         options = deepcopy(dict(options))
         # Settings added since the zone was saved get their defaults.
-        self._defaults = zone_defaults(options.get(CONF_DEFAULTS, {}))
+        self._defaults = with_defaults(options.get(CONF_DEFAULTS, {}), ROOM_SETTINGS)
+        self._zone = with_defaults(options.get(CONF_ZONE_SETTINGS, {}), ZONE_SETTINGS)
         self._rooms = options.get(CONF_ROOMS, {})
         self._people = options.get(CONF_PEOPLE, {})
 
     def _options(self) -> dict[str, Any]:
-        return {CONF_DEFAULTS: self._defaults, CONF_ROOMS: self._rooms, CONF_PEOPLE: self._people}
+        return {
+            CONF_DEFAULTS: self._defaults,
+            CONF_ZONE_SETTINGS: self._zone,
+            CONF_ROOMS: self._rooms,
+            CONF_PEOPLE: self._people,
+        }
 
     def _area_name(self, area_id: str) -> str:
         area = ar.async_get(self.hass).async_get_area(area_id)
@@ -250,17 +265,20 @@ class ZoneMenu(ConfigEntryBaseFlow):
     async def async_step_defaults(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The zone's default taus, weights and stale limit."""
+        """The rooms' default taus and weights, and the zone-wide settings."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            if (error := validate_settings(user_input)) is None:
-                self._defaults = dict(user_input)
+            defaults = {k: v for k, v in user_input.items() if k != CONF_ZONE_SETTINGS}
+            zone = dict(user_input[CONF_ZONE_SETTINGS])
+            if (error := validate_settings({**defaults, **zone})) is None:
+                self._defaults, self._zone = defaults, zone
                 return await self.async_step_menu()
             errors["base"] = error
         return self.async_show_form(
             step_id=CONF_DEFAULTS,
             data_schema=self.add_suggested_values_to_schema(
-                DEFAULTS_SCHEMA, user_input or self._defaults
+                DEFAULTS_SCHEMA,
+                user_input or {**self._defaults, CONF_ZONE_SETTINGS: self._zone},
             ),
             errors=errors,
         )
