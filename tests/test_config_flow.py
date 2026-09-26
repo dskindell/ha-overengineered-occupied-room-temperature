@@ -684,3 +684,49 @@ async def test_too_small_unoccupied_weight_override_rejected(hass: HomeAssistant
     await flow.add_room("kitchen", **{CONF_OVERRIDES: {"w_base": 0.0001}})
     assert flow.step == CONF_ROOM
     assert flow.result["errors"] == {"base": "base_weight_too_small"}
+
+
+# ---------------------------------------------------------------------------
+# Editing edge cases
+# ---------------------------------------------------------------------------
+
+
+async def test_clearing_overrides_on_edit_removes_them(hass: HomeAssistant) -> None:
+    entry = zone_entry(
+        hass,
+        rooms={
+            "kitchen": room_data(
+                "kitchen",
+                **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}", CONF_OVERRIDES: {"tau_person_rise": 10}},
+            )
+        },
+    )
+    flow = await start_configure(hass, entry)
+    await flow.menu(CONF_ROOMS)
+    await flow.submit({CONF_ROOM: "kitchen"})
+    await flow.submit(room_input(**{CONF_OCCUPANCY_TEMPLATE: "{{ true }}", CONF_OVERRIDES: {}}))
+    await flow.submit({CONF_ROOM: CHOICE_DONE})
+    await flow.menu("save")
+    assert entry.options[CONF_ROOMS]["kitchen"][CONF_OVERRIDES] == {}
+
+
+async def test_room_whose_area_was_deleted_can_still_be_edited(hass: HomeAssistant) -> None:
+    entry = zone_entry(
+        hass, rooms={"kitchen": room_data("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})}
+    )
+    areas = ar.async_get(hass)
+    areas.async_delete(areas.async_get_area("kitchen").id)
+    flow = await start_configure(hass, entry)
+    await flow.menu(CONF_ROOMS)
+    labels = {
+        option["value"]: option["label"]
+        for option in flow.result["data_schema"].schema[CONF_ROOM].config["options"]
+    }
+    assert labels["kitchen"] == "kitchen"  # the area ID stands in for the missing name
+    await flow.submit({CONF_ROOM: "kitchen"})
+    assert flow.result["description_placeholders"]["area"] == "kitchen"
+    await flow.submit(room_input(**{CONF_OCCUPANCY_TEMPLATE: "{{ false }}"}))
+    await flow.submit({CONF_ROOM: CHOICE_DONE})
+    result = await flow.menu("save")
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_ROOMS]["kitchen"][CONF_OCCUPANCY_TEMPLATE] == "{{ false }}"

@@ -1510,3 +1510,122 @@ async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssis
     hass.states.async_set("sensor.alex_area", "Kitchen")
     await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------------------
+# Grace period, reload and unload
+# ---------------------------------------------------------------------------
+
+
+async def _start_home_assistant(hass: HomeAssistant) -> None:
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+
+async def _tick(hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float) -> None:
+    freezer.tick(timedelta(seconds=seconds))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_grace_lasts_two_minutes_and_held_time_is_not_counted(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    hass.set_state(CoreState.not_running)
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await _start_home_assistant(hass)
+
+    await _tick(hass, freezer, 119)
+    assert weight(hass, KITCHEN_WEIGHT) == 0.0  # still held just before 2 minutes
+    await _tick(hass, freezer, 2)
+    released = weight(hass, KITCHEN_WEIGHT)
+    # Released at 2 minutes, but the held time isn't applied: at most the last
+    # few seconds count, not the whole 2 minutes (which would give ~0.49).
+    assert 0.0 < released < 0.02
+
+    await _tick(hass, freezer, 60)
+    expected = 1 - (1 - released) * math.exp(-1 / 3)  # one minute at person rise 3
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(expected, abs=5e-5)
+
+
+async def test_reload_during_grace_releases_the_hold(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    hass.set_state(CoreState.not_running)
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await _start_home_assistant(hass)
+    await _tick(hass, freezer, 30)
+    assert weight(hass, KITCHEN_WEIGHT) == 0.0
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, 60)  # no grace after a reload
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1 / 3), abs=0.01)
+
+    await _tick(hass, freezer, 60)  # past when the old zone's grace would have ended
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-2 / 3), abs=0.01)
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_nothing_reaches_a_zone_after_it_is_unloaded(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    runtime = entry.runtime_data
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    seen = _record_states(hass)
+    before = runtime.result
+    set_temperature(hass, "kitchen", "25")
+    hass.states.async_set("sensor.alex_area", "Office")
+    await _tick(hass, freezer, 180)
+    assert [e for e, _ in seen if e.startswith("sensor.oort_")] == []
+    assert runtime.result is before  # the runtime didn't recompute either
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_changed_settings_take_effect_on_reload_without_a_jump(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await advance(hass, freezer, 60)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
+
+    options = entry.options
+    hass.config_entries.async_update_entry(
+        entry, options={**options, CONF_DEFAULTS: {**options[CONF_DEFAULTS], "w_person": 0.5}}
+    )
+    await hass.async_block_till_done()
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert float(kitchen.state) == pytest.approx(1.0, abs=5e-5)  # no jump on reload
+    assert kitchen.attributes["target_weight"] == 0.5
+
+    await advance(hass, freezer, 3)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.5 + 0.5 * math.exp(-1), abs=5e-5)
+
+
+async def test_grace_end_writes_every_weight_sensor(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    hass.set_state(CoreState.not_running)
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "22")
+    await setup_zone(hass, [room("kitchen"), room("office")])
+    await _tick(hass, freezer, 30)  # so the grace end doesn't coincide with the minute timer
+    await _start_home_assistant(hass)
+    await _tick(hass, freezer, 100)  # 130 s after setup: past the first minute tick
+    reported = {e: hass.states.get(e).last_reported for e in (KITCHEN_WEIGHT, OFFICE_WEIGHT)}
+
+    await _tick(hass, freezer, 21)  # grace ends 120 s after start (150 s after setup)
+    for entity_id, before in reported.items():
+        assert hass.states.get(entity_id).last_reported > before, entity_id
