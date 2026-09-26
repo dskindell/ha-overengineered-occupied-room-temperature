@@ -23,6 +23,7 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
     issue_registry as ir,
+    restore_state,
 )
 
 from custom_components.overengineered_occupied_room_temperature.const import (
@@ -1192,3 +1193,28 @@ async def test_one_failing_entity_does_not_stop_the_others(
     await hass.async_block_till_done()
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(22.0, abs=0.1)
     assert "Error updating an entity of zone Home" in caplog.text
+
+
+async def test_re_added_room_starts_at_zero_not_its_old_state(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """HA keeps a removed entity's saved state for 7 days."""
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    office = room("office", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})
+    entry = await setup_instance(hass, [room("kitchen"), office])
+    await advance(hass, freezer, 60)
+    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.5, abs=0.01)
+
+    all_rooms = entry.options[CONF_ROOMS]
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_ROOMS: {"kitchen": all_rooms["kitchen"]}}
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(OFFICE_WEIGHT) is None
+    saved = restore_state.async_get(hass).last_states[OFFICE_WEIGHT]
+    assert saved.extra_data.as_dict()["weight"] == pytest.approx(0.5, abs=0.01)
+
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_ROOMS: all_rooms})
+    await hass.async_block_till_done()
+    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.0)
