@@ -281,6 +281,34 @@ class TestStepRoom:
         assert state.weight == pytest.approx(CONFIG.weights.base, abs=1e-9)
 
 
+class TestZeroTauIsInstant:
+    """A tau of 0 reaches the new target in the same step."""
+
+    PERSON = RoomState(
+        weight=1.0, target=1.0, tau=3.0, tau_name=TauName.PERSON_RISE, status=Status.PERSON,
+        last_update=0.0, last_known_temperature=70.0, last_seen=0.0,
+    )
+    INSTANT = RoomConfig(taus=Taus(deactivate=0.0, dropout=0.0))
+
+    def test_opened_room_drops_to_zero_at_once(self) -> None:
+        state = step_room(self.PERSON, inputs(active=False, person=True), self.INSTANT, 0.0)
+        assert (state.weight, state.target, state.tau_name) == (0.0, 0.0, TauName.DEACTIVATE)
+
+    def test_dropped_out_sensor_drops_to_zero_at_once(self) -> None:
+        state = step_room(self.PERSON, inputs(person=True, temperature=None), self.INSTANT, 0.0)
+        assert (state.weight, state.tau_name) == (0.0, TauName.DROPOUT)
+
+    def test_grace_hold_still_freezes_the_weight(self) -> None:
+        state = step_room(
+            self.PERSON, inputs(active=False, person=True), self.INSTANT, 0.0, hold=True
+        )
+        assert state.weight == 1.0
+
+    def test_positive_tau_still_starts_from_the_current_weight(self) -> None:
+        state = step_room(self.PERSON, inputs(active=False, person=True), CONFIG, 0.0)
+        assert state.weight == 1.0
+
+
 class TestAggregate:
     def test_epsilon_is_one_percent_of_smallest_base(self) -> None:
         assert fallback_epsilon([0.001, 0.002]) == pytest.approx(0.00001)

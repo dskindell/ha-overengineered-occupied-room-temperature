@@ -237,10 +237,15 @@ def step_room(
         previous_status=state.status,
         previous_tau_name=state.tau_name,
     )
+    target = target_weight(status, config.weights)
+    tau = getattr(config.taus, tau_name)
+    if tau <= 0 and not hold:
+        # A tau of 0 means instantly: reach the new target now, not at the next update.
+        weight = target
     return RoomState(
         weight=weight,
-        target=target_weight(status, config.weights),
-        tau=getattr(config.taus, tau_name),
+        target=target,
+        tau=tau,
         tau_name=tau_name,
         status=status,
         last_occupied_state=last_occupied_state,

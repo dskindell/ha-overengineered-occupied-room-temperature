@@ -1344,3 +1344,52 @@ async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
     assert rows[0].attributes["total_weight"] == pytest.approx(
         weight(hass, KITCHEN_WEIGHT) + weight(hass, OFFICE_WEIGHT), abs=2e-4
     )
+
+
+# ---------------------------------------------------------------------------
+# A tau of 0 is instant
+# ---------------------------------------------------------------------------
+
+
+async def test_open_room_leaves_the_output_at_once_with_deactivate_tau_0(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "10")
+    set_temperature(hass, "office", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    hass.states.async_set("binary_sensor.kitchen_window", "off")
+    await setup_instance(
+        hass,
+        [
+            room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"]}),
+            room("office"),
+            person("Alex", "sensor.alex_area"),
+        ],
+        tau_deactivate=0.0,
+    )
+    await advance(hass, freezer, 30)
+    assert float(hass.states.get(TEMPERATURE).state) < 11
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set("binary_sensor.kitchen_window", "on")
+    await hass.async_block_till_done()
+    assert weight(hass, KITCHEN_WEIGHT) == 0.0
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
+
+
+async def test_dropped_out_room_leaves_the_output_at_once_with_dropout_tau_0(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "10")
+    set_temperature(hass, "office", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_instance(
+        hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")],
+        tau_dropout=0.0,
+    )
+    await advance(hass, freezer, 30)
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    assert weight(hass, KITCHEN_WEIGHT) == 0.0
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
