@@ -940,3 +940,49 @@ async def test_opening_template_follows_home_assistants_true_rule(
     set_temperature(hass, "kitchen", "20")
     await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: template})])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is not opened
+
+
+async def test_person_fall_carries_on_after_a_restart(hass: HomeAssistant) -> None:
+    """Across a restart, the saved tau name keeps a room that a person left on person fall."""
+    now = dt_util.utcnow().timestamp()
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(KITCHEN_WEIGHT, "0.8"),
+                {
+                    "weight": 0.8, "target": 0.5, "tau": 3.0, "tau_name": "person_fall",
+                    "status": "occupied", "last_occupied_state": "occupied",
+                    "last_known_temperature": 20.0, "last_seen": now,
+                    "dropout_since": None, "stale": False, "last_update": now,
+                },
+            )
+        ],
+    )
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("binary_sensor.kitchen_motion", "on")
+    await setup_instance(
+        hass, [room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]})]
+    )
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert kitchen.attributes["status"] == "occupied"
+    assert kitchen.attributes["tau_name"] == "person_fall"
+
+
+async def test_room_going_stale_is_written_on_the_next_event_not_just_the_timer(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Staleness is part of what a weight sensor shows, so any update writes it at once."""
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    await setup_instance(hass, [room("kitchen"), room("office")])
+    await advance(hass, freezer, 5)
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_stale"] is False
+
+    # Past the stale limit without a timer tick; an unrelated reading triggers the update.
+    freezer.tick(timedelta(minutes=DEFAULTS["stale_limit"], seconds=30))
+    set_temperature(hass, "office", "23")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_stale"] is True
