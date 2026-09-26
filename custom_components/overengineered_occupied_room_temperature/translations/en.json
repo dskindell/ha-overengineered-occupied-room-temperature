@@ -76,7 +76,7 @@
           "occupancy_sensors": "The room counts as occupied while any of these is on.",
           "occupancy_template": "When true, the room also counts as occupied.",
           "opening_sensors": "The room is left out while any of these is on, like a window or door being open (its weight fades to 0). Unavailable counts as closed.",
-          "opening_template": "When it renders true (true, on, yes or 1), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false."
+          "opening_template": "When it renders true (true, on, yes, enable, or any number other than 0), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false."
         },
         "sections": {
           "overrides": {
@@ -123,7 +123,7 @@
           "occupancy_sensors": "The room counts as occupied while any of these is on.",
           "occupancy_template": "When true, the room also counts as occupied.",
           "opening_sensors": "The room is left out while any of these is on, like a window or door being open (its weight fades to 0). Unavailable counts as closed.",
-          "opening_template": "When it renders true (true, on, yes or 1), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false.",
+          "opening_template": "When it renders true (true, on, yes, enable, or any number other than 0), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false.",
           "remove": "Removes the room from this zone when you submit."
         },
         "sections": {
@@ -274,7 +274,7 @@
           "occupancy_sensors": "The room counts as occupied while any of these is on.",
           "occupancy_template": "When true, the room also counts as occupied.",
           "opening_sensors": "The room is left out while any of these is on, like a window or door being open (its weight fades to 0). Unavailable counts as closed.",
-          "opening_template": "When it renders true (true, on, yes or 1), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false."
+          "opening_template": "When it renders true (true, on, yes, enable, or any number other than 0), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false."
         },
         "sections": {
           "overrides": {
@@ -321,7 +321,7 @@
           "occupancy_sensors": "The room counts as occupied while any of these is on.",
           "occupancy_template": "When true, the room also counts as occupied.",
           "opening_sensors": "The room is left out while any of these is on, like a window or door being open (its weight fades to 0). Unavailable counts as closed.",
-          "opening_template": "When it renders true (true, on, yes or 1), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false.",
+          "opening_template": "When it renders true (true, on, yes, enable, or any number other than 0), the room is also left out. Anything else, including unavailable, unknown or an error, counts as false.",
           "remove": "Removes the room from this zone when you submit."
         },
         "sections": {

@@ -125,7 +125,7 @@ Validation: person and occupancy taus must be greater than 0; deactivate and dro
 | Occupancy sensors | Any number of `binary_sensor` or `input_boolean` entities. The room counts as occupied while any of them is `on`. |
 | Occupancy template | When true, the room also counts as occupied. |
 | Opening entities | Any number of `binary_sensor` or `input_boolean` entities, like window or door contacts. While any of them is `on`, the room is left out and its weight fades to 0 (the `inactive` status). `unavailable` or `unknown` counts as closed. |
-| Opening template | When it renders true (`true`, `on`, `yes` or `1`), the room is also left out. Anything else — including `unavailable`, `unknown` or a template error — counts as false. Errors, and results that aren't a recognisable true/false, are logged. Leave both opening fields blank to always count the room. |
+| Opening template | When it renders true, the room is also left out. True means `true`, `on`, `yes`, `enable`, or any number other than `0` — Home Assistant's usual rule, so a template that returns a number (a temperature, a count) by mistake keeps the room out. Anything else — including `unavailable`, `unknown` or a template error — counts as false. Errors, and results that aren't a recognisable true/false, are logged. Leave both opening fields blank to always count the room. |
 | Overrides (collapsed) | Any of the taus and weights above, for this room only. Leave a field blank to use the zone's default. |
 | Remove this room | Only when editing: removes the room when you submit. |
 
@@ -230,7 +230,7 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```
 
-This runs 127 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
+This runs 136 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
 Lint with [ruff](https://docs.astral.sh/ruff/):
 

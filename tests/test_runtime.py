@@ -886,3 +886,24 @@ async def test_changing_unrecognised_template_result_warns_once(
     hass.states.async_set("sensor.window_battery", "low")
     await hass.async_block_till_done()
     assert len(warnings()) == 2
+
+
+@pytest.mark.parametrize(
+    ("template", "opened"),
+    [
+        ("{{ true }}", True),
+        ("on", True),
+        ("enable", True),
+        ("{{ 2 }}", True),  # Home Assistant's rule: any non-zero number is true
+        ("{{ 21.5 }}", True),
+        ("{{ 0 }}", False),
+        ("off", False),
+    ],
+)
+async def test_opening_template_follows_home_assistants_true_rule(
+    hass: HomeAssistant, template: str, opened: bool
+) -> None:
+    """The README and form text document this rule; keep them in step."""
+    set_temperature(hass, "kitchen", "20")
+    await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: template})])
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is not opened
