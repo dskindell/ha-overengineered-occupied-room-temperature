@@ -110,7 +110,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
 | Unoccupied weight | Target weight otherwise. Must be at least 0.001. | 0.001 |
-| Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. Long enough to ride out a restart or an integration reload. Zone-wide only. | 5 |
+| Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. Zone-wide only. | 5 |
 
 Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0.
 
@@ -159,7 +159,7 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `status` | `inactive`, `person`, `occupied`, or `unoccupied` — see [How it works](#how-it-works). |
 | `active` | `false` while the room is "open" (an opening entity is on or the opening template is true); otherwise `true`. |
 | `temperature_available` | Whether the room's temperature sensor currently has a usable reading. |
-| `temperature_stale` | `true` once the temperature sensor has been unavailable longer than the stale limit — see [Fallback and stale sensors](#fallback-and-stale-sensors). |
+| `temperature_stale` | `true` once the temperature sensor hasn't had a usable reading for longer than the stale limit (counted from when it was last seen working, so this can be `true` straight after a long downtime) — see [Fallback and stale sensors](#fallback-and-stale-sensors). |
 | `person_present` | Whether any tracked person currently resolves to this room. |
 | `occupied` | The combined result of the room's occupancy sensors and occupancy template. |
 | `people` | List of the names of people currently present in this room. |
@@ -168,7 +168,7 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `deactivate` or `dropout` — so you can see both the direction and the reason. |
 | `last_occupied_state` | The last status that was `person` or `occupied` (used to pick the correct fall tau); `null` if the room has never been occupied. |
 
-Room weight is restored across a Home Assistant restart (the downtime itself isn't counted as elapsed time — the room resumes at the weight it had before shutdown rather than jumping as if time had passed).
+Each room's state is restored across a Home Assistant restart and when the zone is reloaded or reconfigured: its weight, status and last reading. The downtime itself isn't counted as elapsed time — the room resumes at the weight it had before rather than jumping as if time had passed. The saved reading is reused only if it's newer than the stale limit.
 
 ### `Temperature` sensor
 

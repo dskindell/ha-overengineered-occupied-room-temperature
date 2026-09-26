@@ -71,11 +71,11 @@ class RoomInputs:
     """A room's inputs at one moment, already evaluated by the runtime."""
 
     active: bool
-    """Result of the active template; True when the room has none."""
+    """False while the room is open (an opening entity is on or its opening template is true)."""
     person_present: bool
     occupied: bool
     temperature: float | None
-    """Current reading converted to the system unit, or None if unavailable or unconvertible."""
+    """Current reading converted to the zone's unit, or None if unavailable or unconvertible."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +162,7 @@ def select_tau_name(
         if last_occupied_state is Status.PERSON:
             return TauName.PERSON_FALL
         return TauName.OCCUPANCY_FALL
-    # Deactivation takes precedence over a sensor dropout.
+    # An open room takes precedence over a sensor dropout.
     return TauName.DEACTIVATE if not inputs.active else TauName.DROPOUT
 
 
