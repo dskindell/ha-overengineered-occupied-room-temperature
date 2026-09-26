@@ -183,7 +183,9 @@ class WeightedTemperatureSensor(_OortSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         result = self._runtime.result
         return {
-            "total_weight": result.total_weight,
+            # Rounded like the weights: an unrounded value would change on every
+            # update and force a new state row even though it isn't recorded.
+            "total_weight": round(result.total_weight, WEIGHT_DECIMALS),
             "contributing_rooms": result.contributing_rooms,
             "fallback": result.fallback,
         }

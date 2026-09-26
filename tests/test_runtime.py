@@ -635,7 +635,7 @@ async def test_temperature_sensor_attributes(
 
     await advance(hass, freezer, 60)
     attributes = hass.states.get(TEMPERATURE).attributes
-    assert attributes["total_weight"] == pytest.approx(2 * 0.001 * (1 - math.exp(-60 / 8)), abs=1e-9)
+    assert attributes["total_weight"] == round(2 * 0.001 * (1 - math.exp(-60 / 8)), 4)
     assert attributes["fallback"] is False
 
 
@@ -830,7 +830,7 @@ async def test_settled_weights_stop_changing(
     before = hass.states.get(KITCHEN_WEIGHT)
     await advance(hass, freezer, 5)
     after = hass.states.get(KITCHEN_WEIGHT)
-    assert after.last_changed == before.last_changed  # no new value, so no new recorder row
+    assert after.last_updated == before.last_updated  # no new value or attribute, so no new row
 
 
 async def test_total_weight_is_not_recorded(hass: HomeAssistant) -> None:
@@ -839,3 +839,22 @@ async def test_total_weight_is_not_recorded(hass: HomeAssistant) -> None:
     temperature = hass.states.get(TEMPERATURE)
     assert "total_weight" in temperature.attributes  # still on the entity
     assert "total_weight" in temperature.state_info["unrecorded_attributes"]
+
+
+async def test_temperature_sensor_not_rewritten_when_nothing_visible_changes(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """An update that changes nothing shown must not create a new recorder row."""
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_instance(
+        hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")]
+    )
+    await advance(hass, freezer, 60)
+    before = hass.states.get(TEMPERATURE)
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set("sensor.alex_area", "Kitchen", {"rssi": -70})  # attribute-only
+    await hass.async_block_till_done()
+    assert hass.states.get(TEMPERATURE).last_updated == before.last_updated

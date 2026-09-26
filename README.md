@@ -176,7 +176,7 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in you
 
 | Attribute | Meaning |
 |---|---|
-| `total_weight` | Sum of the weights of rooms that contributed a valid temperature (excludes the fallback term's weight). Not recorded in history, since it changes on almost every update. |
+| `total_weight` | Sum of the weights of rooms that contributed a valid temperature (excludes the fallback term's weight), to 4 decimal places. Not recorded in history. |
 | `contributing_rooms` | How many rooms contributed a valid temperature to the weighted average. |
 | `fallback` | `true` when the plain-average fallback term outweighs every room's own weighted contribution — see below. |
 
