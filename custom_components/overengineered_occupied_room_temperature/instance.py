@@ -149,7 +149,7 @@ def _signature(room: Room) -> tuple[Any, ...]:
         None
         if inputs is None
         else (
-            inputs.active,
+            inputs.open,
             inputs.person_present,
             inputs.occupied,
             inputs.temperature is not None,
@@ -497,10 +497,8 @@ class InstanceRuntime:
             before[room.area_id] = _signature(room)
             room.people = people_by_area.get(room.area_id, [])
             room.inputs = inputs[room.area_id] = RoomInputs(
-                active=not (
-                    self._any_on(room.opening_sensors)
-                    or self._template_true(room.opening_template)
-                ),
+                open=self._any_on(room.opening_sensors)
+                or self._template_true(room.opening_template),
                 person_present=bool(room.people),
                 occupied=self._any_on(room.occupancy_sensors)
                 or self._template_true(room.occupancy_template),

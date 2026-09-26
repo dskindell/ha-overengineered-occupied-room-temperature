@@ -103,7 +103,7 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
         return {
             "area_id": self._room.area_id,
             "status": state.status.value,
-            "active": inputs.active if inputs else None,
+            "open": inputs.open if inputs else None,
             "temperature_available": inputs.temperature is not None if inputs else None,
             "temperature_stale": state.stale,
             "person_present": inputs.person_present if inputs else None,

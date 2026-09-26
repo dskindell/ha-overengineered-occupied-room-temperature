@@ -30,14 +30,17 @@ OORT doesn't talk to any hardware itself. It reads sensors and template results 
 
 ## How it works
 
-For each room you configure, OORT tracks a **weight** between 0 and roughly 1, driven by what's happening in that room right now:
+For each room you configure, OORT tracks a **weight** between 0 and 1, driven by what's happening in that room right now:
 
 | Status | Meaning | Target weight |
 |---|---|---|
 | `person` | A configured person is located in this room | *Person weight* (default `1.0`) |
 | `occupied` | An occupancy sensor or template says the room is occupied, but no tracked person is in it | *Occupied weight* (default `0.5`) |
 | `unoccupied` | Neither of the above | *Unoccupied weight* (default `0.001`) |
-| `inactive` | The room is "open" (an opening entity is on, or its opening template is true), or its temperature sensor is unusable | `0` |
+| `open` | An opening entity is on, or the opening template is true — the room is left out | `0` |
+| `dropout` | The room's temperature sensor has no usable reading — the room is left out | `0` |
+
+The first matching status applies, in the order `open`, `dropout`, `person`, `occupied`, `unoccupied`.
 
 The weight doesn't jump straight to its target — it moves there exponentially, over a configurable time constant (a "tau", in minutes) that's different for rising into a status and falling out of it. This smooths out someone briefly walking through a room, or a motion sensor's usual on/off flicker.
 
@@ -104,7 +107,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Field | Description | Default |
 |---|---|---|
 | Person rise tau | How fast a room's weight rises when a tracked person arrives. | 3 |
-| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly inactive during that fall (for example while its temperature sensor reconnects after a restart), it finishes the fall at the occupancy rise speed instead. | 3 |
+| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly open or dropped out during that fall (for example while its temperature sensor reconnects after a restart), it finishes the fall at the occupancy rise speed instead. | 3 |
 | Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). Also used when an empty room climbs back up to the unoccupied weight — for example after being open, or when it's new. | 10 |
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
 | Deactivate tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
@@ -126,7 +129,7 @@ Validation: person and occupancy taus must be greater than 0; deactivate and dro
 | Temperature sensor | A `sensor` with device class `temperature` measuring this room. |
 | Occupancy sensors | Any number of `binary_sensor` or `input_boolean` entities. The room counts as occupied while any of them is `on`. |
 | Occupancy template | When true, the room also counts as occupied. |
-| Opening entities | Any number of `binary_sensor` or `input_boolean` entities, like window or door contacts. While any of them is `on`, the room is left out and its weight fades to 0 (the `inactive` status). `unavailable` or `unknown` counts as closed. |
+| Opening entities | Any number of `binary_sensor` or `input_boolean` entities, like window or door contacts. While any of them is `on`, the room is left out and its weight fades to 0 (the `open` status). `unavailable` or `unknown` counts as closed. |
 | Opening template | When it renders true, the room is also left out. True means `true`, `on`, `yes`, `enable`, or any number other than `0` — Home Assistant's usual rule, so a template that returns a number (a temperature, a count) by mistake keeps the room out. Anything else — including `unavailable`, `unknown` or a template error — counts as false. Errors, and results that aren't a recognisable true/false, are logged. Leave both opening fields blank to always count the room. |
 | Overrides (collapsed) | Any of the taus and weights above, for this room only. Leave a field blank to use the zone's default. |
 | Remove this room | Only when editing: removes the room when you submit. |
@@ -158,8 +161,8 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | Attribute | Meaning |
 |---|---|
 | `area_id` | The ID of the room's Home Assistant area. |
-| `status` | `inactive`, `person`, `occupied`, or `unoccupied` — see [How it works](#how-it-works). |
-| `active` | `false` while the room is "open" (an opening entity is on or the opening template is true); otherwise `true`. |
+| `status` | `open`, `dropout`, `person`, `occupied`, or `unoccupied` — see [How it works](#how-it-works). |
+| `open` | `true` while an opening entity is on or the opening template is true; otherwise `false`. |
 | `temperature_available` | Whether the room's temperature sensor currently has a usable reading. |
 | `temperature_stale` | `true` once the temperature sensor hasn't had a usable reading for longer than the stale limit (counted from when it was last seen working, so this can be `true` straight after a long downtime) — see [Fallback and stale sensors](#fallback-and-stale-sensors). |
 | `person_present` | Whether any tracked person currently resolves to this room. |
@@ -184,7 +187,7 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in the
 
 ## Fallback and stale sensors
 
-Every room's temperature sensor is read continuously, independent of whether the room counts as active. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature (including `nan` or `inf`), the room keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit** (counted from when it was last seen working), that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
+Every room's temperature sensor is read continuously, whether or not the room is open. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature (including `nan` or `inf`), the room (status `dropout`) keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit** (counted from when it was last seen working), that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
 
 The overall `Temperature` sensor also has a small **fallback term**: a plain average of the rooms' current valid readings — rooms that aren't open first; open rooms' readings are used only if no closed room has a current or recent reading, with a fixed weight equal to 1% of your smallest room's unoccupied weight. This term is normally negligible next to any room with real weight, but it keeps the sensor producing a sensible number — rather than becoming unavailable — while every room is fading toward zero (for example, right after startup, or if every room is deactivated at once). If every temperature sensor is down at once, the fallback uses the rooms' last readings instead, until they go stale. The `fallback` attribute turns `true` when this term's weight exceeds the sum of every room's own weight, which is your cue that the temperature is currently closer to a whole-home average than to an occupancy-weighted one.
 

@@ -266,13 +266,13 @@ async def test_opening_template_true_fades_room_out(
     hass.states.async_set("binary_sensor.kitchen_window", "on")
     await hass.async_block_till_done()
     kitchen = hass.states.get(KITCHEN_WEIGHT)
-    assert kitchen.attributes["status"] == "inactive"
-    assert kitchen.attributes["active"] is False
+    assert kitchen.attributes["status"] == "open"
+    assert kitchen.attributes["open"] is True
     await advance(hass, freezer, 1)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=5e-5)  # deactivate τ
 
 
-async def test_any_opening_entity_on_makes_room_inactive(hass: HomeAssistant) -> None:
+async def test_any_opening_entity_on_makes_room_open(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_window", "off")
     hass.states.async_set("input_boolean.kitchen_door_open", "off")
@@ -290,20 +290,20 @@ async def test_any_opening_entity_on_makes_room_inactive(hass: HomeAssistant) ->
             )
         ],
     )
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
 
     hass.states.async_set("input_boolean.kitchen_door_open", "on")
     await hass.async_block_till_done()
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "inactive"
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "open"
 
     hass.states.async_set("input_boolean.kitchen_door_open", "off")
     hass.states.async_set("binary_sensor.kitchen_window", "on")
     await hass.async_block_till_done()
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is False
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is True
 
     hass.states.async_set("binary_sensor.kitchen_window", "off")
     await hass.async_block_till_done()
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
 
 
 @pytest.mark.parametrize("state", ["unavailable", "unknown"])
@@ -313,7 +313,7 @@ async def test_unavailable_opening_entity_is_not_open(hass: HomeAssistant, state
     await setup_instance(
         hass, [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"]})]
     )
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
 
 
 async def test_missing_opening_entity_is_not_open(hass: HomeAssistant) -> None:
@@ -321,7 +321,7 @@ async def test_missing_opening_entity_is_not_open(hass: HomeAssistant) -> None:
     await setup_instance(
         hass, [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.does_not_exist"]})]
     )
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
 
 
 async def test_opening_entities_and_template_combine(hass: HomeAssistant) -> None:
@@ -340,10 +340,10 @@ async def test_opening_entities_and_template_combine(hass: HomeAssistant) -> Non
             )
         ],
     )
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
     hass.states.async_set("input_boolean.heater", "on")
     await hass.async_block_till_done()
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is False  # template alone
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is True  # template alone
 
 
 async def test_fahrenheit_sensor_is_converted(hass: HomeAssistant) -> None:
@@ -364,7 +364,7 @@ async def test_dropout_then_stale_goes_unavailable(
     await hass.async_block_till_done()
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["temperature_available"] is False
-    assert kitchen.attributes["status"] == "inactive"
+    assert kitchen.attributes["status"] == "dropout"
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0)  # last known
 
     await advance(hass, freezer, 11)
@@ -376,7 +376,7 @@ async def test_dropout_then_stale_goes_unavailable(
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(21.0)
 
 
-async def test_all_rooms_inactive_uses_plain_average(
+async def test_all_rooms_open_uses_plain_average(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "20")
@@ -547,7 +547,7 @@ async def test_failing_templates_count_as_not_open_and_not_occupied(
         ],
     )
     kitchen = hass.states.get(KITCHEN_WEIGHT)
-    assert kitchen.attributes["active"] is True  # only a clear "true" means open
+    assert kitchen.attributes["open"] is False  # only a clear "true" means open
     assert kitchen.attributes["occupied"] is False
     assert kitchen.attributes["status"] == "unoccupied"
     errors = [r for r in caplog.records if r.levelname == "ERROR"]
@@ -561,7 +561,7 @@ async def test_unavailable_template_result_is_not_open_and_not_logged(
 ) -> None:
     set_temperature(hass, "kitchen", "20")
     await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: result})])
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
     assert not [r for r in caplog.records if r.levelname in ("WARNING", "ERROR") and "OORT" in r.getMessage()]
 
 
@@ -571,7 +571,7 @@ async def test_unrecognised_template_result_is_not_open_and_warned_once(
     set_temperature(hass, "kitchen", "20")
     await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "maybe"})])
     await advance(hass, freezer, 3)
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is True
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is False
     warnings = [r for r in caplog.records if r.levelname == "WARNING" and "maybe" in r.getMessage()]
     assert len(warnings) == 1
 
@@ -595,7 +595,7 @@ async def test_unusable_temperature_counts_as_dropout(
     await setup_instance(hass, [room("kitchen"), room("office")])
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["temperature_available"] is False
-    assert kitchen.attributes["status"] == "inactive"
+    assert kitchen.attributes["status"] == "dropout"
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(24.0)
 
 
@@ -988,7 +988,7 @@ async def test_opening_template_follows_home_assistants_true_rule(
     """The README and form text document this rule; keep them in step."""
     set_temperature(hass, "kitchen", "20")
     await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: template})])
-    assert hass.states.get(KITCHEN_WEIGHT).attributes["active"] is not opened
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["open"] is opened
 
 
 async def test_person_fall_carries_on_after_a_restart(hass: HomeAssistant) -> None:
@@ -1121,7 +1121,7 @@ async def test_setup_never_writes_a_placeholder_state(hass: HomeAssistant) -> No
     temperatures = [state.state for entity_id, state in seen if entity_id == TEMPERATURE]
     assert STATE_UNAVAILABLE not in temperatures
     first_weight = next(state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT)
-    assert first_weight.attributes["active"] is True  # inputs already evaluated
+    assert first_weight.attributes["open"] is False  # inputs already evaluated
 
 
 async def test_reload_never_writes_a_placeholder_state(hass: HomeAssistant) -> None:
@@ -1270,8 +1270,8 @@ async def test_first_state_reflects_the_opening_template(hass: HomeAssistant) ->
     seen = _record_states(hass)
     await setup_instance(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ true }}"})])
     first = next(state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT)
-    assert first.attributes["active"] is False
-    assert first.attributes["status"] == "inactive"
+    assert first.attributes["open"] is True
+    assert first.attributes["status"] == "open"
 
 
 async def test_person_fall_carries_on_after_a_restart_with_an_occupancy_template(
@@ -1305,7 +1305,7 @@ async def test_template_failing_at_startup_is_logged_once(
         hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ states('x') | float }}"})]
     )
     kitchen = hass.states.get(KITCHEN_WEIGHT)
-    assert kitchen.attributes["active"] is True  # a failing opening template isn't open
+    assert kitchen.attributes["open"] is False  # a failing opening template isn't open
     errors = [r for r in caplog.records if r.levelname == "ERROR" and "OORT zone" in r.getMessage()]
     assert len(errors) == 1
 
@@ -1362,6 +1362,26 @@ async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
 # ---------------------------------------------------------------------------
 # A tau of 0 is instant
 # ---------------------------------------------------------------------------
+
+
+async def test_open_and_dropout_are_separate_statuses(hass: HomeAssistant) -> None:
+    """Status says why a room is left out; open wins over dropout."""
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("binary_sensor.kitchen_window", "off")
+    await setup_instance(
+        hass, [room("kitchen", **{CONF_OPENING_SENSORS: ["binary_sensor.kitchen_window"]})]
+    )
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert (kitchen.attributes["status"], kitchen.attributes["open"]) == ("dropout", False)
+    assert kitchen.attributes["tau_name"] == "dropout"
+
+    hass.states.async_set("binary_sensor.kitchen_window", "on")
+    await hass.async_block_till_done()
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert (kitchen.attributes["status"], kitchen.attributes["open"]) == ("open", True)
+    assert kitchen.attributes["tau_name"] == "deactivate"
 
 
 async def test_open_room_leaves_the_output_at_once_with_deactivate_tau_0(

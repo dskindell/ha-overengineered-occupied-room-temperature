@@ -35,14 +35,12 @@ CONFIG = room_config(const.DEFAULTS, {})
 
 def inputs(
     *,
-    active: bool = True,
+    open: bool = False,
     person: bool = False,
     occupied: bool = False,
     temperature: float | None = 70.0,
 ) -> RoomInputs:
-    return RoomInputs(
-        active=active, person_present=person, occupied=occupied, temperature=temperature
-    )
+    return RoomInputs(open=open, person_present=person, occupied=occupied, temperature=temperature)
 
 
 def run(state: RoomState, room_inputs: RoomInputs, minutes: float, *, start: float = 0.0,
@@ -74,8 +72,9 @@ class TestStatusAndTarget:
     @pytest.mark.parametrize(
         ("room_inputs", "expected"),
         [
-            (inputs(active=False, person=True, occupied=True), Status.INACTIVE),
-            (inputs(temperature=None, person=True), Status.INACTIVE),
+            (inputs(open=True, person=True, occupied=True), Status.OPEN),
+            (inputs(open=True, temperature=None), Status.OPEN),  # open wins over dropout
+            (inputs(temperature=None, person=True), Status.DROPOUT),
             (inputs(person=True, occupied=True), Status.PERSON),
             (inputs(occupied=True), Status.OCCUPIED),
             (inputs(), Status.UNOCCUPIED),
@@ -86,7 +85,8 @@ class TestStatusAndTarget:
 
     def test_targets(self) -> None:
         weights = Weights(person=1.0, occupied=0.5, base=0.001)
-        assert target_weight(Status.INACTIVE, weights) == 0.0
+        assert target_weight(Status.OPEN, weights) == 0.0
+        assert target_weight(Status.DROPOUT, weights) == 0.0
         assert target_weight(Status.PERSON, weights) == 1.0
         assert target_weight(Status.OCCUPIED, weights) == 0.5
         assert target_weight(Status.UNOCCUPIED, weights) == 0.001
@@ -98,32 +98,30 @@ class TestSelectTau:
     )
 
     def test_rises(self) -> None:
-        assert select_tau(Status.PERSON, inputs(), None, self.taus) == 1
-        assert select_tau(Status.OCCUPIED, inputs(), None, self.taus) == 3
+        assert select_tau(Status.PERSON, None, self.taus) == 1
+        assert select_tau(Status.OCCUPIED, None, self.taus) == 3
 
     def test_fall_uses_last_occupied_state(self) -> None:
-        assert select_tau(Status.UNOCCUPIED, inputs(), Status.PERSON, self.taus) == 2
-        assert select_tau(Status.UNOCCUPIED, inputs(), Status.OCCUPIED, self.taus) == 4
-        assert select_tau(Status.UNOCCUPIED, inputs(), None, self.taus) == 4
+        assert select_tau(Status.UNOCCUPIED, Status.PERSON, self.taus) == 2
+        assert select_tau(Status.UNOCCUPIED, Status.OCCUPIED, self.taus) == 4
+        assert select_tau(Status.UNOCCUPIED, None, self.taus) == 4
 
-    def test_inactive_uses_deactivate_or_dropout(self) -> None:
-        assert select_tau(Status.INACTIVE, inputs(active=False), None, self.taus) == 5
-        assert select_tau(Status.INACTIVE, inputs(temperature=None), None, self.taus) == 6
-        both = inputs(active=False, temperature=None)
-        assert select_tau(Status.INACTIVE, both, None, self.taus) == 5
+    def test_open_uses_deactivate_and_dropout_uses_dropout(self) -> None:
+        assert select_tau(Status.OPEN, None, self.taus) == 5
+        assert select_tau(Status.DROPOUT, None, self.taus) == 6
 
     def test_names_match_the_chosen_tau(self) -> None:
         cases = [
-            (Status.PERSON, inputs(), None, TauName.PERSON_RISE),
-            (Status.OCCUPIED, inputs(), None, TauName.OCCUPANCY_RISE),
-            (Status.UNOCCUPIED, inputs(), Status.PERSON, TauName.PERSON_FALL),
-            (Status.UNOCCUPIED, inputs(), Status.OCCUPIED, TauName.OCCUPANCY_FALL),
-            (Status.INACTIVE, inputs(active=False), None, TauName.DEACTIVATE),
-            (Status.INACTIVE, inputs(temperature=None), None, TauName.DROPOUT),
+            (Status.PERSON, None, TauName.PERSON_RISE),
+            (Status.OCCUPIED, None, TauName.OCCUPANCY_RISE),
+            (Status.UNOCCUPIED, Status.PERSON, TauName.PERSON_FALL),
+            (Status.UNOCCUPIED, Status.OCCUPIED, TauName.OCCUPANCY_FALL),
+            (Status.OPEN, None, TauName.DEACTIVATE),
+            (Status.DROPOUT, None, TauName.DROPOUT),
         ]
-        for status, room_inputs, last, name in cases:
-            assert select_tau_name(status, room_inputs, last) is name
-            assert select_tau(status, room_inputs, last, self.taus) == getattr(self.taus, name)
+        for status, last, name in cases:
+            assert select_tau_name(status, last) is name
+            assert select_tau(status, last, self.taus) == getattr(self.taus, name)
 
 
 class TestPersonLeavesOccupiedRoom:
@@ -134,14 +132,11 @@ class TestPersonLeavesOccupiedRoom:
     )
 
     def test_select_tau_uses_person_fall_when_the_person_leaves(self) -> None:
-        name = select_tau_name(
-            Status.OCCUPIED, inputs(occupied=True), Status.OCCUPIED, previous_status=Status.PERSON
-        )
+        name = select_tau_name(Status.OCCUPIED, Status.OCCUPIED, previous_status=Status.PERSON)
         assert name is TauName.PERSON_FALL
         assert (
             select_tau(
                 Status.OCCUPIED,
-                inputs(occupied=True),
                 Status.OCCUPIED,
                 self.taus,
                 previous_status=Status.PERSON,
@@ -150,10 +145,8 @@ class TestPersonLeavesOccupiedRoom:
         )
 
     def test_arriving_at_occupied_from_elsewhere_still_rises(self) -> None:
-        for previous in (None, Status.UNOCCUPIED, Status.INACTIVE, Status.OCCUPIED):
-            name = select_tau_name(
-                Status.OCCUPIED, inputs(occupied=True), None, previous_status=previous
-            )
+        for previous in (None, Status.UNOCCUPIED, Status.OPEN, Status.DROPOUT, Status.OCCUPIED):
+            name = select_tau_name(Status.OCCUPIED, None, previous_status=previous)
             assert name is TauName.OCCUPANCY_RISE, previous
 
     def test_person_then_occupied_then_empty(self) -> None:
@@ -213,11 +206,11 @@ class TestStepRoom:
         assert state.last_occupied_state is Status.PERSON
         assert state.tau == 2
 
-    def test_inactive_room_fades_with_deactivate_tau(self) -> None:
+    def test_open_room_fades_with_deactivate_tau(self) -> None:
         state = RoomState(weight=1.0, target=1.0, tau=3.0, status=Status.PERSON, last_update=0.0)
-        state = step_room(state, inputs(active=False, person=True), CONFIG, 0.0)
-        assert state.status is Status.INACTIVE
-        state = step_room(state, inputs(active=False, person=True), CONFIG, MINUTE)
+        state = step_room(state, inputs(open=True, person=True), CONFIG, 0.0)
+        assert state.status is Status.OPEN
+        state = step_room(state, inputs(open=True, person=True), CONFIG, MINUTE)
         assert state.weight == pytest.approx(math.exp(-1))  # deactivate tau = 1 min
 
     def test_hold_freezes_weight_but_tracks_status(self) -> None:
@@ -231,7 +224,7 @@ class TestStepRoom:
         state = step_room(RoomState(), inputs(temperature=68.0), CONFIG, 0.0)
         assert state.last_seen == 0.0
         state = step_room(state, inputs(temperature=None), CONFIG, MINUTE)
-        assert state.status is Status.INACTIVE
+        assert state.status is Status.DROPOUT
         assert state.tau == CONFIG.taus.dropout
         assert state.dropout_since == 0.0  # counted from when it was last seen working
         assert state.usable_temperature == 68.0
@@ -296,8 +289,8 @@ class TestEmptyRoomAfterAnOpenPeriod:
     def _after_open(self, minutes: float) -> RoomState:
         config = replace(CONFIG, weights=self.WEIGHTS)
         state = run(RoomState(), inputs(person=True), 60)  # a person room at ~1.0
-        opened = step_room(state, inputs(active=False, person=True), config, 60 * MINUTE)
-        return step_room(opened, inputs(active=False), config, (60 + minutes) * MINUTE)
+        opened = step_room(state, inputs(open=True, person=True), config, 60 * MINUTE)
+        return step_room(opened, inputs(open=True), config, (60 + minutes) * MINUTE)
 
     def test_rises_on_occupancy_rise_after_a_long_open_period(self) -> None:
         config = replace(CONFIG, weights=self.WEIGHTS)
@@ -324,7 +317,7 @@ class TestZeroTauIsInstant:
     INSTANT = replace(CONFIG, taus=replace(CONFIG.taus, deactivate=0.0, dropout=0.0))
 
     def test_opened_room_drops_to_zero_at_once(self) -> None:
-        state = step_room(self.PERSON, inputs(active=False, person=True), self.INSTANT, 0.0)
+        state = step_room(self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0)
         assert (state.weight, state.target, state.tau_name) == (0.0, 0.0, TauName.DEACTIVATE)
 
     def test_dropped_out_sensor_drops_to_zero_at_once(self) -> None:
@@ -333,12 +326,12 @@ class TestZeroTauIsInstant:
 
     def test_grace_hold_still_freezes_the_weight(self) -> None:
         state = step_room(
-            self.PERSON, inputs(active=False, person=True), self.INSTANT, 0.0, hold=True
+            self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0, hold=True
         )
         assert state.weight == 1.0
 
     def test_positive_tau_still_starts_from_the_current_weight(self) -> None:
-        state = step_room(self.PERSON, inputs(active=False, person=True), CONFIG, 0.0)
+        state = step_room(self.PERSON, inputs(open=True, person=True), CONFIG, 0.0)
         assert state.weight == 1.0
 
 
@@ -481,7 +474,7 @@ class TestStepZone:
 
     def test_open_room_is_not_preferred_for_the_fallback(self) -> None:
         closed = (RoomState(), inputs(temperature=20.0), CONFIG)
-        opened = (RoomState(), inputs(active=False, temperature=12.0), CONFIG)
+        opened = (RoomState(), inputs(open=True, temperature=12.0), CONFIG)
         step = step_zone({"a": closed, "b": opened}, 0.0)
         assert step.result.temperature == pytest.approx(20.0)
 

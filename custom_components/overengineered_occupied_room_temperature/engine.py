@@ -17,9 +17,16 @@ import math
 
 
 class Status(StrEnum):
-    """The state driving a room's weight, in priority order."""
+    """The state driving a room's weight, in priority order.
 
-    INACTIVE = "inactive"
+    ``open`` and ``dropout`` both leave the room out (target 0); an open room that
+    has also dropped out is ``open``.
+    """
+
+    OPEN = "open"
+    """An opening entity is on or the opening template is true."""
+    DROPOUT = "dropout"
+    """The temperature sensor has no usable reading."""
     PERSON = "person"
     OCCUPIED = "occupied"
     UNOCCUPIED = "unoccupied"
@@ -54,7 +61,7 @@ class Taus:
 
 @dataclass(frozen=True, slots=True)
 class Weights:
-    """Target weights for each status (inactive is always 0); keys ``w_<field>``."""
+    """Target weights for each status (open and dropout are always 0); keys ``w_<field>``."""
 
     person: float
     occupied: float
@@ -74,8 +81,8 @@ class RoomConfig:
 class RoomInputs:
     """A room's inputs at one moment, already evaluated by the runtime."""
 
-    active: bool
-    """False while the room is open (an opening entity is on or its opening template is true)."""
+    open: bool
+    """True while an opening entity is on or the opening template is true."""
     person_present: bool
     occupied: bool
     temperature: float | None
@@ -118,9 +125,11 @@ def approach(weight: float, target: float, tau: float, elapsed: float) -> float:
 
 
 def room_status(inputs: RoomInputs) -> Status:
-    """Pick the status driving the weight: inactive, then person, then occupied."""
-    if not inputs.active or inputs.temperature is None:
-        return Status.INACTIVE
+    """Pick the status driving the weight: open, dropout, person, then occupied."""
+    if inputs.open:
+        return Status.OPEN
+    if inputs.temperature is None:
+        return Status.DROPOUT
     if inputs.person_present:
         return Status.PERSON
     if inputs.occupied:
@@ -131,7 +140,8 @@ def room_status(inputs: RoomInputs) -> Status:
 def target_weight(status: Status, weights: Weights) -> float:
     """Weight a room heads toward for a given status."""
     return {
-        Status.INACTIVE: 0.0,
+        Status.OPEN: 0.0,
+        Status.DROPOUT: 0.0,
         Status.PERSON: weights.person,
         Status.OCCUPIED: weights.occupied,
         Status.UNOCCUPIED: weights.base,
@@ -140,7 +150,6 @@ def target_weight(status: Status, weights: Weights) -> float:
 
 def select_tau_name(
     status: Status,
-    inputs: RoomInputs,
     last_occupied_state: Status | None,
     *,
     previous_status: Status | None = None,
@@ -171,13 +180,11 @@ def select_tau_name(
         if last_occupied_state is Status.PERSON:
             return TauName.PERSON_FALL
         return TauName.OCCUPANCY_FALL
-    # An open room takes precedence over a sensor dropout.
-    return TauName.DEACTIVATE if not inputs.active else TauName.DROPOUT
+    return TauName.DEACTIVATE if status is Status.OPEN else TauName.DROPOUT
 
 
 def select_tau(
     status: Status,
-    inputs: RoomInputs,
     last_occupied_state: Status | None,
     taus: Taus,
     *,
@@ -187,7 +194,6 @@ def select_tau(
     """Tau (minutes) used to approach the target for ``status``."""
     name = select_tau_name(
         status,
-        inputs,
         last_occupied_state,
         previous_status=previous_status,
         previous_tau_name=previous_tau_name,
@@ -242,7 +248,6 @@ def step_room(
     target = target_weight(status, config.weights)
     tau_name = select_tau_name(
         status,
-        inputs,
         last_occupied_state,
         previous_status=state.status,
         previous_tau_name=state.tau_name,
@@ -293,7 +298,7 @@ class RoomSample:
     current: float | None
     """This update's reading, or None if the sensor is unusable (``RoomInputs.temperature``)."""
     closed: bool
-    """Not open (``RoomInputs.active``); preferred for the plain average."""
+    """Not open (``not RoomInputs.open``); preferred for the plain average."""
 
 
 def aggregate(samples: Iterable[RoomSample], epsilon: float) -> Aggregate:
@@ -385,7 +390,7 @@ def step_zone(
                 weight=states[key].weight,
                 usable=states[key].usable_temperature,
                 current=inputs.temperature,
-                closed=inputs.active,
+                closed=not inputs.open,
             )
             for key, (_, inputs, _) in rooms.items()
         ),
