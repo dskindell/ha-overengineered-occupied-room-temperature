@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import logging
+import math
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -257,6 +258,8 @@ class InstanceRuntime:
             and unit in TemperatureConverter.VALID_UNITS
         ):
             temperature = TemperatureConverter.convert(temperature, unit, self.unit)
+        if temperature is not None and not math.isfinite(temperature):
+            temperature = None
         room.state = replace(state, last_update=None, last_known_temperature=temperature)
 
     @callback
@@ -458,7 +461,11 @@ class InstanceRuntime:
         )
 
     def _temperature(self, entity_id: str) -> float | None:
-        """A sensor's reading converted to the system unit, or None if unusable."""
+        """A sensor's reading converted to the zone's unit, or None if unusable.
+
+        Non-finite values (``nan``, ``inf``, or a conversion that overflows) are unusable:
+        Home Assistant refuses to write them as a sensor state.
+        """
         state = self.hass.states.get(entity_id)
         if state is None or state.state in _MISSING:
             return None
@@ -469,7 +476,8 @@ class InstanceRuntime:
             value = float(state.state)
         except ValueError:
             return None
-        return TemperatureConverter.convert(value, unit, self.unit)
+        converted = TemperatureConverter.convert(value, unit, self.unit)
+        return converted if math.isfinite(converted) else None
 
     def _person_area(self, person: Person) -> str | None:
         """The ID of the room area a person is in, or None."""
@@ -541,4 +549,9 @@ class InstanceRuntime:
             ],
         )
         for update in list(self._listeners):
-            update()
+            # One entity failing to write must not stop the others (as HA's
+            # DataUpdateCoordinator does).
+            try:
+                update()
+            except Exception:
+                _LOGGER.exception("Error updating an entity of zone %s", self.entry.title)

@@ -567,6 +567,9 @@ async def test_unrecognised_template_result_is_not_open_and_warned_once(
         ("20", {}),  # no unit
         ("20", {"unit_of_measurement": "%"}),  # not a temperature unit
         ("warm", {"unit_of_measurement": "°C"}),  # not a number
+        ("nan", {"unit_of_measurement": "°C"}),  # not finite
+        ("inf", {"unit_of_measurement": "°C"}),
+        ("1e400", {"unit_of_measurement": "°C"}),  # overflows to inf
     ],
 )
 async def test_unusable_temperature_counts_as_dropout(
@@ -1128,3 +1131,64 @@ async def test_open_room_does_not_drive_the_output_during_an_outage(
     await advance(hass, freezer, 31)  # past the 60-minute stale limit
     # Nothing closed is left, so the open kitchen is used rather than going unavailable.
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(12.0, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Non-finite readings and failing entities
+# ---------------------------------------------------------------------------
+
+
+async def test_non_finite_reading_keeps_the_last_good_one(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "21")
+    await setup_instance(hass, [room("kitchen")])
+    set_temperature(hass, "kitchen", "nan")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_available"] is False
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(21.0)
+
+
+async def test_reading_that_overflows_on_conversion_is_unusable(hass: HomeAssistant) -> None:
+    hass.config.units = US_CUSTOMARY_SYSTEM  # zone in °F
+    set_temperature(hass, "office", "70", unit="°F")
+    set_temperature(hass, "kitchen", "1e308")  # finite in °C, inf in °F
+    await setup_instance(hass, [room("kitchen"), room("office")])
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_available"] is False
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(70.0)
+
+
+async def test_saved_non_finite_reading_is_not_restored(hass: HomeAssistant) -> None:
+    now = dt_util.utcnow().timestamp()
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(KITCHEN_WEIGHT, "1.0"),
+                {
+                    "weight": 1.0, "target": 1.0, "tau": 3.0, "status": "person",
+                    "last_occupied_state": "person", "last_known_temperature": math.nan,
+                    "last_seen": now, "dropout_since": None, "stale": False,
+                    "last_update": now, "temperature_unit": "°C",
+                },
+            )
+        ],
+    )
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
+    set_temperature(hass, "office", "24")
+    await setup_instance(hass, [room("kitchen"), room("office")])
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(24.0)
+
+
+async def test_one_failing_entity_does_not_stop_the_others(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_instance(hass, [room("kitchen")])
+
+    def fail() -> None:
+        raise ValueError("boom")
+
+    entry.runtime_data._listeners.insert(0, fail)
+    set_temperature(hass, "kitchen", "22")
+    await hass.async_block_till_done()
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(22.0, abs=0.1)
+    assert "Error updating an entity of zone Home" in caplog.text
