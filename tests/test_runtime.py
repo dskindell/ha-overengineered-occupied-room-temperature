@@ -50,6 +50,13 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     DOMAIN,
 )
 
+from custom_components.overengineered_occupied_room_temperature.engine import RoomState, Status
+from custom_components.overengineered_occupied_room_temperature.storage import (
+    SAVED_VERSION,
+    RoomExtraData,
+    saved_room_state,
+)
+
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 KITCHEN_WEIGHT = "sensor.oort_home_kitchen_weight"
@@ -1422,3 +1429,62 @@ async def test_zone_saved_without_a_setting_loads_with_its_default(
     await hass.async_block_till_done()
     await advance(hass, freezer, 120)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(DEFAULTS["w_base"], abs=5e-5)
+
+
+# ---------------------------------------------------------------------------
+# Saved room state
+# ---------------------------------------------------------------------------
+
+SAVED = {
+    "weight": 0.8, "target": 1.0, "tau": 3.0, "tau_name": "person_rise", "status": "person",
+    "last_occupied_state": "person", "last_known_temperature": 20.0, "last_seen": 100.0,
+    "dropout_since": None, "stale": False, "last_update": 100.0,
+}
+
+
+def test_saved_state_records_its_version() -> None:
+    data = RoomExtraData(RoomState(weight=0.5), "°C").as_dict()
+    assert data["version"] == SAVED_VERSION == 1
+    assert data["temperature_unit"] == "°C"
+    assert saved_room_state(data) == RoomState(weight=0.5)
+
+
+def test_saved_state_ignores_unknown_fields_and_defaults_missing_ones() -> None:
+    """A field removed from or added to RoomState in a later version doesn't lose the room."""
+    data = {k: v for k, v in SAVED.items() if k not in ("tau_name", "last_seen")}
+    state = saved_room_state({**data, "retired_field": 1, "version": 99})
+    assert state is not None
+    assert (state.weight, state.status, state.tau_name, state.last_seen) == (
+        0.8, Status.PERSON, None, None
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"weight": "0.8"},  # wrong type
+        {"weight": math.nan},
+        {"weight": True},
+        {"status": "bogus"},
+        {"tau_name": "bogus"},
+        {"status": None},
+    ],
+)
+def test_unusable_saved_state_starts_the_room_afresh(change: dict[str, Any]) -> None:
+    assert saved_room_state({**SAVED, **change}) is None
+
+
+@pytest.mark.parametrize("missing", ["weight", "target", "tau", "status"])
+def test_saved_state_without_a_core_field_is_unusable(missing: str) -> None:
+    assert saved_room_state({k: v for k, v in SAVED.items() if k != missing}) is None
+
+
+async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssistant) -> None:
+    data = {k: v for k, v in SAVED.items() if k != "last_seen"}
+    mock_restore_cache_with_extra_data(
+        hass, [(State(KITCHEN_WEIGHT, "0.8"), {**data, "retired_field": 1})]
+    )
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8)

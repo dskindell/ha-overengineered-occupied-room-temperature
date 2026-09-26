@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import logging
@@ -66,11 +66,10 @@ from .engine import (
     RoomConfig,
     RoomInputs,
     RoomState,
-    Status,
-    TauName,
     room_config,
     step_zone,
 )
+from .storage import saved_room_state, saved_unit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,27 +132,6 @@ def room_unique_id(entry: ConfigEntry, area_id: str) -> str:
 
 def temperature_unique_id(entry: ConfigEntry) -> str:
     return f"{entry.entry_id}_temperature"
-
-
-def saved_unit(data: Mapping[str, Any]) -> str | None:
-    """The unit a saved room reading is in; None if none was saved."""
-    unit = data.get("temperature_unit")
-    return unit if isinstance(unit, str) else None
-
-
-def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
-    """A room's engine state from its saved extra data, or None if unusable."""
-    try:
-        values = dict(data)
-        values.pop("temperature_unit", None)
-        values["status"] = Status(values["status"])
-        if values.get("last_occupied_state") is not None:
-            values["last_occupied_state"] = Status(values["last_occupied_state"])
-        if values.get("tau_name") is not None:
-            values["tau_name"] = TauName(values["tau_name"])
-        return RoomState(**values)
-    except (KeyError, TypeError, ValueError):
-        return None
 
 
 def _signature(room: Room) -> tuple[Any, ...]:

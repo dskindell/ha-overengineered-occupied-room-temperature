@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -15,11 +14,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
-from .engine import RoomState
 from .instance import InstanceRuntime, Room, room_unique_id, temperature_unique_id
+from .storage import RoomExtraData
 
 
 async def async_setup_entry(
@@ -69,21 +68,6 @@ class _OortSensor(SensorEntity):
     @callback
     def _async_on_runtime_update(self) -> None:
         self.async_write_ha_state()
-
-
-@dataclass(frozen=True, slots=True)
-class RoomExtraData(ExtraStoredData):
-    """A room's engine state, saved across restarts.
-
-    Read back by ``InstanceRuntime.async_prime`` before the entities are added.
-    """
-
-    state: RoomState
-    temperature_unit: str
-
-    def as_dict(self) -> dict[str, Any]:
-        return {**asdict(self.state), "temperature_unit": self.temperature_unit}
-
 
 
 class RoomWeightSensor(_OortSensor, RestoreEntity):
