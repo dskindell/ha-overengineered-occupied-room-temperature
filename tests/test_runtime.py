@@ -17,6 +17,7 @@ from pytest_homeassistant_custom_component.common import (
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, UnitOfTemperature
 from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
@@ -101,7 +102,7 @@ async def setup_instance(
         domain=DOMAIN,
         title="Home",
         version=1,
-        data={CONF_NAME: "Home"},
+        data={CONF_NAME: "Home", "temperature_unit": hass.config.units.temperature_unit},
         options=zone_options(items, **settings),
     )
     entry.add_to_hass(hass)
@@ -986,3 +987,63 @@ async def test_room_going_stale_is_written_on_the_next_event_not_just_the_timer(
     set_temperature(hass, "office", "23")
     await hass.async_block_till_done()
     assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_stale"] is True
+
+
+# ---------------------------------------------------------------------------
+# Units
+# ---------------------------------------------------------------------------
+
+
+async def test_unit_change_without_reload_keeps_the_output_right(
+    hass: HomeAssistant,
+) -> None:
+    """The zone's unit is fixed at load, so a switch can't double-convert its output."""
+    set_temperature(hass, "kitchen", "20")
+    await setup_instance(hass, [room("kitchen")])
+    hass.config.units = US_CUSTOMARY_SYSTEM  # changed without the zone reloading
+    set_temperature(hass, "kitchen", "20.5")  # the sensor still reports °C
+    await hass.async_block_till_done()
+    temperature = hass.states.get(TEMPERATURE)
+    assert temperature.attributes["unit_of_measurement"] == "°F"
+    assert float(temperature.state) == pytest.approx(68.9, abs=0.01)
+
+
+async def test_unit_system_change_and_reload_never_double_convert(hass: HomeAssistant) -> None:
+    """The zone keeps the unit it was created with, across reloads."""
+    set_temperature(hass, "kitchen", "20.5")
+    entry = await setup_instance(hass, [room("kitchen")])
+    await hass.config.async_update(unit_system="us_customary")
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.unit == "°C"
+    temperature = hass.states.get(TEMPERATURE)
+    # Home Assistant keeps a registered sensor's unit; either way the value must match it.
+    if temperature.attributes["unit_of_measurement"] == "°C":
+        assert float(temperature.state) == pytest.approx(20.5, abs=0.01)
+    else:
+        assert float(temperature.state) == pytest.approx(68.9, abs=0.01)
+
+
+async def test_saved_reading_is_converted_if_the_unit_changed_while_down(
+    hass: HomeAssistant,
+) -> None:
+    now = dt_util.utcnow().timestamp()
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(KITCHEN_WEIGHT, "1.0"),
+                {
+                    "weight": 1.0, "target": 1.0, "tau": 3.0, "status": "person",
+                    "last_occupied_state": "person", "last_known_temperature": 20.0,
+                    "last_seen": now, "dropout_since": None, "stale": False,
+                    "last_update": now, "temperature_unit": "°C",
+                },
+            )
+        ],
+    )
+    hass.config.units = US_CUSTOMARY_SYSTEM  # a zone created now works in °F
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)  # not back yet
+    entry = await setup_instance(hass, [room("kitchen")])
+    assert entry.runtime_data.unit == "°F"
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(68.0, abs=0.01)

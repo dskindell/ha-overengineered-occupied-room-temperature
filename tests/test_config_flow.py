@@ -176,7 +176,7 @@ async def test_create_zone_full_journey(hass: HomeAssistant) -> None:
     result = await flow.menu("finish")
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Home"
-    assert result["data"] == {CONF_NAME: "Home"}
+    assert result["data"] == {CONF_NAME: "Home", "temperature_unit": "°C"}
     options = result["options"]
     assert options[CONF_DEFAULTS] == {**DEFAULTS, "w_person": 2.0}
     assert options[CONF_ROOMS] == {

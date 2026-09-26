@@ -84,14 +84,22 @@ class RoomExtraData(ExtraStoredData):
     """A room's engine state, saved across restarts."""
 
     state: RoomState
+    temperature_unit: str
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self.state)
+        return {**asdict(self.state), "temperature_unit": self.temperature_unit}
+
+    @staticmethod
+    def unit_from_dict(data: dict[str, Any]) -> str | None:
+        """The unit the saved reading is in; None if none was saved."""
+        unit = data.get("temperature_unit")
+        return unit if isinstance(unit, str) else None
 
     @staticmethod
     def state_from_dict(data: dict[str, Any]) -> RoomState | None:
         try:
             values = dict(data)
+            values.pop("temperature_unit", None)
             values["status"] = Status(values["status"])
             if values.get("last_occupied_state") is not None:
                 values["last_occupied_state"] = Status(values["last_occupied_state"])
@@ -116,12 +124,15 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         if (extra := await self.async_get_last_extra_data()) is not None:
-            if (state := RoomExtraData.state_from_dict(extra.as_dict())) is not None:
-                self._runtime.restore_room(self._room.area_id, state)
+            data = extra.as_dict()
+            if (state := RoomExtraData.state_from_dict(data)) is not None:
+                self._runtime.restore_room(
+                    self._room.area_id, state, RoomExtraData.unit_from_dict(data)
+                )
 
     @property
     def extra_restore_state_data(self) -> RoomExtraData:
-        return RoomExtraData(self._room.state)
+        return RoomExtraData(self._room.state, self._runtime.unit)
 
     @callback
     def _async_on_runtime_update(self) -> None:
@@ -168,7 +179,7 @@ class WeightedTemperatureSensor(_OortSensor):
     def __init__(self, runtime: InstanceRuntime, device: DeviceInfo) -> None:
         super().__init__(runtime, device)
         self._attr_unique_id = temperature_unique_id(runtime.entry)
-        self._attr_native_unit_of_measurement = runtime.hass.config.units.temperature_unit
+        self._attr_native_unit_of_measurement = runtime.unit
 
     @property
     def available(self) -> bool:

@@ -7,6 +7,7 @@ DOMAIN: Final = "overengineered_occupied_room_temperature"
 # Zone (config entry): `data` holds the name; `options` hold the defaults, rooms
 # and people, all edited through the zone's menu.
 CONF_NAME: Final = "name"
+CONF_TEMPERATURE_UNIT: Final = "temperature_unit"  # fixed when the zone is created
 CONF_DEFAULTS: Final = "defaults"
 CONF_ROOMS: Final = "rooms"  # {area_id: room data}
 CONF_PEOPLE: Final = "people"  # {person_id: person data}

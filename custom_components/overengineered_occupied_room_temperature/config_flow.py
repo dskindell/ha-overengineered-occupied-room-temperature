@@ -46,6 +46,7 @@ from .const import (
     CONF_SOURCE_ENTITY,
     CONF_STALE_LIMIT,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     CONF_W_BASE,
     DEFAULTS,
@@ -454,7 +455,14 @@ class OortConfigFlow(ZoneMenu, ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Create the zone with everything set up in the menu."""
         return self.async_create_entry(
-            title=self._name, data={CONF_NAME: self._name}, options=self._options()
+            title=self._name,
+            data={
+                CONF_NAME: self._name,
+                # The zone keeps this unit for life, so its Temperature sensor's unit
+                # never changes under Home Assistant's unit handling.
+                CONF_TEMPERATURE_UNIT: self.hass.config.units.temperature_unit,
+            },
+            options=self._options(),
         )
 
 

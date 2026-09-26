@@ -172,7 +172,7 @@ Room weight is restored across a Home Assistant restart (the downtime itself isn
 
 ### `Temperature` sensor
 
-Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in your Home Assistant instance's configured temperature unit (sensor readings in other units are converted automatically). It becomes `unavailable` when nothing can be averaged — see below. Attributes:
+Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in the temperature unit Home Assistant was set to when you created the zone (sensor readings in other units are converted automatically). The zone keeps that unit even if you later change Home Assistant's unit system; Home Assistant converts it for display as it does for any other temperature sensor. It becomes `unavailable` when nothing can be averaged — see below. Attributes:
 
 | Attribute | Meaning |
 |---|---|
@@ -232,7 +232,7 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```
 
-This runs 146 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
+This runs 149 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
 Lint with [ruff](https://docs.astral.sh/ruff/):
 

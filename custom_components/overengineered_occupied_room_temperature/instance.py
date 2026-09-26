@@ -52,6 +52,7 @@ from .const import (
     CONF_TAU_PERSON_FALL,
     CONF_TAU_PERSON_RISE,
     CONF_TEMPERATURE_SENSOR,
+    CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     CONF_W_BASE,
     CONF_W_OCCUPIED,
@@ -153,6 +154,12 @@ class InstanceRuntime:
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
+        # The zone's unit, fixed when it was created: used for every conversion
+        # and as the Temperature sensor's unit, so a unit-system switch can't
+        # double-convert the output. Home Assistant converts it for display.
+        self.unit: str = entry.data.get(
+            CONF_TEMPERATURE_UNIT, hass.config.units.temperature_unit
+        )
         self.entry = entry
         areas = ar.async_get(hass)
         options = entry.options
@@ -197,13 +204,23 @@ class InstanceRuntime:
     # -- restore and listeners ------------------------------------------------
 
     @callback
-    def restore_room(self, area_id: str, state: RoomState) -> None:
+    def restore_room(self, area_id: str, state: RoomState, unit: str | None = None) -> None:
         """Seed a room with state saved before a restart.
 
         The downtime is not applied as elapsed time, so ``last_update`` is cleared.
+        A saved reading in another unit is converted to this zone's unit.
         """
-        if (room := self.rooms.get(area_id)) is not None:
-            room.state = replace(state, last_update=None)
+        if (room := self.rooms.get(area_id)) is None:
+            return
+        temperature = state.last_known_temperature
+        if (
+            temperature is not None
+            and unit is not None
+            and unit != self.unit
+            and unit in TemperatureConverter.VALID_UNITS
+        ):
+            temperature = TemperatureConverter.convert(temperature, unit, self.unit)
+        room.state = replace(state, last_update=None, last_known_temperature=temperature)
 
     @callback
     def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
@@ -394,7 +411,7 @@ class InstanceRuntime:
             value = float(state.state)
         except ValueError:
             return None
-        return TemperatureConverter.convert(value, unit, self.hass.config.units.temperature_unit)
+        return TemperatureConverter.convert(value, unit, self.unit)
 
     def _person_area(self, person: Person) -> str | None:
         """The ID of the room area a person is in, or None."""
