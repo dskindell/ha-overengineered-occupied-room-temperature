@@ -11,13 +11,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
 from .engine import RoomState, Status, TauName
 from .instance import InstanceRuntime, Room
 
@@ -72,7 +72,11 @@ class _OortSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self.async_on_remove(self._runtime.async_add_listener(self.async_write_ha_state))
+        self.async_on_remove(self._runtime.async_add_listener(self._async_on_runtime_update))
+
+    @callback
+    def _async_on_runtime_update(self) -> None:
+        self.async_write_ha_state()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,9 +123,17 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
     def extra_restore_state_data(self) -> RoomExtraData:
         return RoomExtraData(self._room.state)
 
+    @callback
+    def _async_on_runtime_update(self) -> None:
+        # Written on the minute timer and when the room's status or inputs change,
+        # not on every temperature reading.
+        if self._room.write_pending:
+            self.async_write_ha_state()
+
     @property
     def native_value(self) -> float:
-        return self._room.state.weight
+        # Rounded so a settled weight stops producing new recorder rows.
+        return round(self._room.state.weight, WEIGHT_DECIMALS)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -150,6 +162,8 @@ class WeightedTemperatureSensor(_OortSensor):
     _attr_name = "Temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_suggested_display_precision = 1
+    # Changes on almost every update; kept on the entity but out of history.
+    _unrecorded_attributes = frozenset({"total_weight"})
 
     def __init__(self, runtime: InstanceRuntime, device: DeviceInfo) -> None:
         super().__init__(runtime, device)
@@ -162,7 +176,8 @@ class WeightedTemperatureSensor(_OortSensor):
 
     @property
     def native_value(self) -> float | None:
-        return self._runtime.result.temperature
+        temperature = self._runtime.result.temperature
+        return None if temperature is None else round(temperature, TEMPERATURE_DECIMALS)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

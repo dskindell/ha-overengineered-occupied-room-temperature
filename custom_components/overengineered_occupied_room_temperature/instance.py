@@ -93,6 +93,8 @@ class Room:
     state: RoomState = field(default_factory=RoomState)
     inputs: RoomInputs | None = None
     people: list[str] = field(default_factory=list)
+    write_pending: bool = True
+    """Whether the room's weight sensor should write its state after this update."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +125,26 @@ def _room_config(defaults: Mapping[str, Any], overrides: Mapping[str, Any]) -> R
             base=values[CONF_W_BASE],
         ),
         stale_limit=defaults[CONF_STALE_LIMIT],
+    )
+
+
+def _signature(room: Room) -> tuple[Any, ...]:
+    """What a room's weight sensor shows apart from the weight itself."""
+    state, inputs = room.state, room.inputs
+    return (
+        state.status,
+        state.target,
+        state.tau_name,
+        state.stale,
+        tuple(room.people),
+        None
+        if inputs is None
+        else (
+            inputs.active,
+            inputs.person_present,
+            inputs.occupied,
+            inputs.temperature is not None,
+        ),
     )
 
 
@@ -274,7 +296,9 @@ class InstanceRuntime:
 
     @callback
     def _async_on_state(self, _event: Event[EventStateChangedData]) -> None:
-        self.async_update()
+        # Weights are rewritten only when a room's status or inputs change; a new
+        # temperature reading alone updates just the Temperature sensor.
+        self.async_update(write_weights=False)
 
     @callback
     def _async_on_timer(self, _now: datetime) -> None:
@@ -287,7 +311,7 @@ class InstanceRuntime:
         for update in updates:
             self._template_results[update.template] = update.result
             self._log_template_result(update.template, update.result)
-        self.async_update()
+        self.async_update(write_weights=False)
 
     def _log_template_result(self, template: Template, result: Any) -> None:
         """Log a template result that can't count as true or false.
@@ -374,7 +398,7 @@ class InstanceRuntime:
     # -- update ---------------------------------------------------------------
 
     @callback
-    def async_update(self) -> None:
+    def async_update(self, *, write_weights: bool = True) -> None:
         """Advance every room to now, recompute the output and notify entities."""
         now = dt_util.utcnow().timestamp()
         people_by_area: dict[str, list[str]] = {}
@@ -384,6 +408,7 @@ class InstanceRuntime:
 
         current_temperatures: list[float] = []
         for room in self.rooms.values():
+            before = _signature(room)
             temperature = self._temperature(room.temperature_sensor)
             if temperature is not None:
                 current_temperatures.append(temperature)
@@ -399,6 +424,7 @@ class InstanceRuntime:
                 temperature=temperature,
             )
             room.state = step_room(room.state, room.inputs, room.config, now, hold=self._hold)
+            room.write_pending = write_weights or _signature(room) != before
 
         self.result = aggregate(
             ((room.state.weight, room.state.usable_temperature) for room in self.rooms.values()),

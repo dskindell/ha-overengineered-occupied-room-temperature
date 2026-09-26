@@ -157,13 +157,13 @@ async def test_person_pulls_the_temperature_toward_their_room(
     assert hass.states.get(OFFICE_WEIGHT).attributes["tau_name"] == "occupancy_fall"
 
     await advance(hass, freezer, 3)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1), abs=1e-6)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1), abs=5e-5)
 
     await advance(hass, freezer, 60)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=1e-6)
-    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.001, abs=1e-6)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
+    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.001, abs=5e-5)
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(
-        (20 * 1.0 + 24 * 0.001) / 1.001, abs=1e-3
+        round((20 * 1.0 + 24 * 0.001) / 1.001, 1), abs=1e-9
     )
 
 
@@ -232,7 +232,7 @@ async def test_opening_template_true_fades_room_out(
         ],
     )
     await advance(hass, freezer, 60)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=1e-6)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
 
     hass.states.async_set("binary_sensor.kitchen_window", "on")
     await hass.async_block_till_done()
@@ -240,7 +240,7 @@ async def test_opening_template_true_fades_room_out(
     assert kitchen.attributes["status"] == "inactive"
     assert kitchen.attributes["active"] is False
     await advance(hass, freezer, 1)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=1e-6)  # deactivate τ
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=5e-5)  # deactivate τ
 
 
 async def test_any_opening_entity_on_makes_room_inactive(hass: HomeAssistant) -> None:
@@ -471,8 +471,8 @@ async def test_room_overrides_replace_zone_defaults(
     assert hass.states.get(OFFICE_WEIGHT).attributes["tau"] == DEFAULTS["tau_person_rise"]
 
     await advance(hass, freezer, 10)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(2.0 * (1 - math.exp(-1)), abs=1e-6)
-    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(1 - math.exp(-10 / 3), abs=1e-6)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(2.0 * (1 - math.exp(-1)), abs=5e-5)
+    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(1 - math.exp(-10 / 3), abs=5e-5)
 
 
 async def test_room_added_through_configure_appears_after_save(hass: HomeAssistant) -> None:
@@ -723,7 +723,7 @@ async def test_person_leaving_an_occupied_room_uses_person_fall(
         ],
     )
     await advance(hass, freezer, 60)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=1e-6)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
 
     hass.states.async_set("sensor.alex_area", "Garage")  # Alex leaves; motion still on
     await hass.async_block_till_done()
@@ -733,7 +733,7 @@ async def test_person_leaving_an_occupied_room_uses_person_fall(
         "person_fall",
     )
     await advance(hass, freezer, 3)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.5 + 0.5 * math.exp(-1), abs=1e-6)
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.5 + 0.5 * math.exp(-1), abs=5e-5)
     assert hass.states.get(KITCHEN_WEIGHT).attributes["tau_name"] == "person_fall"
 
 
@@ -760,3 +760,82 @@ async def test_total_outage_with_instant_dropout_holds_until_stale_limit(
 
 def test_default_stale_limit_is_15_minutes() -> None:
     assert DEFAULTS["stale_limit"] == 15
+
+
+# ---------------------------------------------------------------------------
+# Recorder load
+# ---------------------------------------------------------------------------
+
+
+async def test_temperature_change_does_not_rewrite_room_weights(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    await setup_instance(hass, [room("kitchen"), room("office")])
+    await advance(hass, freezer, 5)
+    kitchen_before = hass.states.get(KITCHEN_WEIGHT)
+    temperature_before = hass.states.get(TEMPERATURE)
+
+    freezer.tick(timedelta(seconds=5))
+    set_temperature(hass, "office", "23")
+    await hass.async_block_till_done()
+
+    assert hass.states.get(KITCHEN_WEIGHT).last_reported == kitchen_before.last_reported, (
+        "a temperature reading must not rewrite the weight sensors"
+    )
+    assert hass.states.get(TEMPERATURE).last_updated > temperature_before.last_updated
+
+
+async def test_status_change_rewrites_that_room_at_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    hass.states.async_set("binary_sensor.kitchen_motion", "off")
+    await setup_instance(
+        hass,
+        [room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}), room("office")],
+    )
+    await advance(hass, freezer, 5)
+    office_before = hass.states.get(OFFICE_WEIGHT)
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set("binary_sensor.kitchen_motion", "on")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "occupied"
+    assert hass.states.get(OFFICE_WEIGHT).last_reported == office_before.last_reported
+
+
+async def test_stored_values_are_rounded(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20.123456")
+    set_temperature(hass, "office", "24.987654")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await setup_instance(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await advance(hass, freezer, 2)
+    weight_text = hass.states.get(KITCHEN_WEIGHT).state
+    assert len(weight_text.split(".")[1]) <= 4, weight_text
+    temperature_text = hass.states.get(TEMPERATURE).state
+    assert len(temperature_text.split(".")[1]) <= 1, temperature_text
+
+
+async def test_settled_weights_stop_changing(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    await setup_instance(hass, [room("kitchen")])
+    await advance(hass, freezer, 120)
+    before = hass.states.get(KITCHEN_WEIGHT)
+    await advance(hass, freezer, 5)
+    after = hass.states.get(KITCHEN_WEIGHT)
+    assert after.last_changed == before.last_changed  # no new value, so no new recorder row
+
+
+async def test_total_weight_is_not_recorded(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    await setup_instance(hass, [room("kitchen")])
+    temperature = hass.states.get(TEMPERATURE)
+    assert "total_weight" in temperature.attributes  # still on the entity
+    assert "total_weight" in temperature.state_info["unrecorded_attributes"]

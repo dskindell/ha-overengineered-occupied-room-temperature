@@ -151,7 +151,7 @@ Each zone creates one device ("OORT `<zone name>`") containing:
 
 ### `<Room> weight` sensor
 
-Its state is the room's current weight (a number between 0 and the largest of the room's weights). Attributes:
+Its state is the room's current weight (a number between 0 and the largest of the room's weights), stored to 4 decimal places. It's written once a minute, and straight away when the room's status or inputs change — not on every temperature reading. Attributes:
 
 | Attribute | Meaning |
 |---|---|
@@ -172,11 +172,11 @@ Room weight is restored across a Home Assistant restart (the downtime itself isn
 
 ### `Temperature` sensor
 
-Its state is the zone's occupancy-weighted temperature, in your Home Assistant instance's configured temperature unit (sensor readings in other units are converted automatically). It becomes `unavailable` when nothing can be averaged — see below. Attributes:
+Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in your Home Assistant instance's configured temperature unit (sensor readings in other units are converted automatically). It becomes `unavailable` when nothing can be averaged — see below. Attributes:
 
 | Attribute | Meaning |
 |---|---|
-| `total_weight` | Sum of the weights of rooms that contributed a valid temperature (excludes the fallback term's weight). |
+| `total_weight` | Sum of the weights of rooms that contributed a valid temperature (excludes the fallback term's weight). Not recorded in history, since it changes on almost every update. |
 | `contributing_rooms` | How many rooms contributed a valid temperature to the weighted average. |
 | `fallback` | `true` when the plain-average fallback term outweighs every room's own weighted contribution — see below. |
 
@@ -230,7 +230,7 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/python -m pytest
 ```
 
-This runs 118 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
+This runs 127 tests: the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
 Lint with [ruff](https://docs.astral.sh/ruff/):
 
