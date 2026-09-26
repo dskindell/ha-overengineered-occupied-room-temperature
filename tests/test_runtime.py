@@ -106,6 +106,18 @@ async def setup_instance(
         options=zone_options(items, **settings),
     )
     entry.add_to_hass(hass)
+    # Register the room sensors as a previous run would have, so saved state (from
+    # mock_restore_cache_with_extra_data) is found by entity ID at setup.
+    registry = er.async_get(hass)
+    for kind, key, _ in items:
+        if kind == "room":
+            registry.async_get_or_create(
+                "sensor",
+                DOMAIN,
+                f"{entry.entry_id}_{key}_weight",
+                suggested_object_id=f"oort_home_{key}_weight",
+                config_entry=entry,
+            )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
@@ -1047,3 +1059,47 @@ async def test_saved_reading_is_converted_if_the_unit_changed_while_down(
     entry = await setup_instance(hass, [room("kitchen")])
     assert entry.runtime_data.unit == "°F"
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(68.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# First states
+# ---------------------------------------------------------------------------
+
+
+def _record_states(hass: HomeAssistant) -> list[tuple[str, State]]:
+    seen: list[tuple[str, State]] = []
+
+    def _on(event: Any) -> None:
+        if event.data["new_state"] is not None:
+            seen.append((event.data["entity_id"], event.data["new_state"]))
+
+    hass.bus.async_listen("state_changed", _on)
+    return seen
+
+
+async def test_setup_never_writes_a_placeholder_state(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    seen = _record_states(hass)
+    await setup_instance(hass, [room("kitchen")])
+    await hass.async_block_till_done()
+    temperatures = [state.state for entity_id, state in seen if entity_id == TEMPERATURE]
+    assert STATE_UNAVAILABLE not in temperatures
+    first_weight = next(state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT)
+    assert first_weight.attributes["active"] is True  # inputs already evaluated
+
+
+async def test_reload_never_writes_a_placeholder_state(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_instance(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await hass.async_block_till_done()
+    seen = _record_states(hass)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    temperatures = [state.state for entity_id, state in seen if entity_id == TEMPERATURE]
+    # Unloading marks entities unavailable (Home Assistant does that); what matters is
+    # that the reloaded zone's first state is a real value.
+    after_unload = temperatures[temperatures.index(STATE_UNAVAILABLE) + 1 :] if STATE_UNAVAILABLE in temperatures else temperatures
+    assert after_unload and STATE_UNAVAILABLE not in after_unload
+    weights = [state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT and state.state != STATE_UNAVAILABLE]
+    assert weights[0].attributes["status"] == "person"

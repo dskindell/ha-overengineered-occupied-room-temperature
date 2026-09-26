@@ -17,7 +17,12 @@ from homeassistant.const import (
 )
 from homeassistant.core import CoreState, Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import TemplateError
-from homeassistant.helpers import area_registry as ar, issue_registry as ir
+from homeassistant.helpers import (
+    area_registry as ar,
+    entity_registry as er,
+    issue_registry as ir,
+    restore_state,
+)
 from homeassistant.helpers.event import (
     TrackTemplate,
     TrackTemplateResult,
@@ -63,6 +68,8 @@ from .const import (
     VALUE_TYPE_AREA_ID,
 )
 from .engine import (
+    Status,
+    TauName,
     Aggregate,
     RoomConfig,
     RoomInputs,
@@ -127,6 +134,35 @@ def _room_config(defaults: Mapping[str, Any], overrides: Mapping[str, Any]) -> R
         ),
         stale_limit=defaults[CONF_STALE_LIMIT],
     )
+
+
+def room_unique_id(entry: ConfigEntry, area_id: str) -> str:
+    return f"{entry.entry_id}_{area_id}_weight"
+
+
+def temperature_unique_id(entry: ConfigEntry) -> str:
+    return f"{entry.entry_id}_temperature"
+
+
+def saved_unit(data: Mapping[str, Any]) -> str | None:
+    """The unit a saved room reading is in; None if none was saved."""
+    unit = data.get("temperature_unit")
+    return unit if isinstance(unit, str) else None
+
+
+def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
+    """A room's engine state from its saved extra data, or None if unusable."""
+    try:
+        values = dict(data)
+        values.pop("temperature_unit", None)
+        values["status"] = Status(values["status"])
+        if values.get("last_occupied_state") is not None:
+            values["last_occupied_state"] = Status(values["last_occupied_state"])
+        if values.get("tau_name") is not None:
+            values["tau_name"] = TauName(values["tau_name"])
+        return RoomState(**values)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _signature(room: Room) -> tuple[Any, ...]:
@@ -195,7 +231,8 @@ class InstanceRuntime:
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
         self._template_problems: dict[Template, str] = {}
-        self._hold = False
+        # Grace period only while Home Assistant itself is starting.
+        self._hold = hass.state is not CoreState.running
         self._listeners: list[Callable[[], None]] = []
 
     def _template(self, value: str | None) -> Template | None:
@@ -229,6 +266,29 @@ class InstanceRuntime:
         return lambda: self._listeners.remove(update)
 
     # -- lifecycle ------------------------------------------------------------
+
+    @callback
+    def async_prime(self) -> None:
+        """Restore saved room state and compute a first result, before any entity
+        is added, so their first states are real values.
+
+        Reads Home Assistant's restore store directly: it's loaded before any
+        integration starts, and on a reload it holds the states saved at unload.
+        Nothing is written here, since no listener is registered yet.
+        """
+        registry = er.async_get(self.hass)
+        saved = restore_state.async_get(self.hass).last_states
+        for area_id in self.rooms:
+            entity_id = registry.async_get_entity_id(
+                "sensor", DOMAIN, room_unique_id(self.entry, area_id)
+            )
+            stored = saved.get(entity_id) if entity_id else None
+            if stored is None or stored.extra_data is None:
+                continue
+            data = stored.extra_data.as_dict()
+            if (state := saved_room_state(data)) is not None:
+                self.restore_room(area_id, state, saved_unit(data))
+        self.async_update()
 
     @callback
     def async_start(self) -> None:
@@ -270,9 +330,7 @@ class InstanceRuntime:
             )
         )
 
-        # Grace period only while Home Assistant itself is starting.
-        if self.hass.state is not CoreState.running:
-            self._hold = True
+        if self._hold:
             entry.async_on_unload(async_at_started(self.hass, self._async_start_grace))
 
         self._async_update_repairs()

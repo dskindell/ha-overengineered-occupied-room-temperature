@@ -18,6 +18,9 @@ type OortConfigEntry = ConfigEntry[InstanceRuntime]
 async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
     """Set up an OORT zone."""
     entry.runtime_data = InstanceRuntime(hass, entry)
+    # Restore rooms and compute a first result before the entities are added, so
+    # they never write a placeholder state.
+    entry.runtime_data.async_prime()
     # Platform setup waits for its entities to be added, so every room sensor has
     # restored its saved state before the runtime starts computing.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

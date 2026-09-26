@@ -18,16 +18,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
-from .engine import RoomState, Status, TauName
-from .instance import InstanceRuntime, Room
-
-
-def room_unique_id(entry: ConfigEntry, area_id: str) -> str:
-    return f"{entry.entry_id}_{area_id}_weight"
-
-
-def temperature_unique_id(entry: ConfigEntry) -> str:
-    return f"{entry.entry_id}_temperature"
+from .engine import RoomState
+from .instance import InstanceRuntime, Room, room_unique_id, temperature_unique_id
 
 
 async def async_setup_entry(
@@ -81,7 +73,10 @@ class _OortSensor(SensorEntity):
 
 @dataclass(frozen=True, slots=True)
 class RoomExtraData(ExtraStoredData):
-    """A room's engine state, saved across restarts."""
+    """A room's engine state, saved across restarts.
+
+    Read back by ``InstanceRuntime.async_prime`` before the entities are added.
+    """
 
     state: RoomState
     temperature_unit: str
@@ -89,25 +84,6 @@ class RoomExtraData(ExtraStoredData):
     def as_dict(self) -> dict[str, Any]:
         return {**asdict(self.state), "temperature_unit": self.temperature_unit}
 
-    @staticmethod
-    def unit_from_dict(data: dict[str, Any]) -> str | None:
-        """The unit the saved reading is in; None if none was saved."""
-        unit = data.get("temperature_unit")
-        return unit if isinstance(unit, str) else None
-
-    @staticmethod
-    def state_from_dict(data: dict[str, Any]) -> RoomState | None:
-        try:
-            values = dict(data)
-            values.pop("temperature_unit", None)
-            values["status"] = Status(values["status"])
-            if values.get("last_occupied_state") is not None:
-                values["last_occupied_state"] = Status(values["last_occupied_state"])
-            if values.get("tau_name") is not None:
-                values["tau_name"] = TauName(values["tau_name"])
-            return RoomState(**values)
-        except (KeyError, TypeError, ValueError):
-            return None
 
 
 class RoomWeightSensor(_OortSensor, RestoreEntity):
@@ -120,15 +96,6 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
         self._room = room
         self._attr_name = f"{room.name} weight"
         self._attr_unique_id = room_unique_id(runtime.entry, room.area_id)
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        if (extra := await self.async_get_last_extra_data()) is not None:
-            data = extra.as_dict()
-            if (state := RoomExtraData.state_from_dict(data)) is not None:
-                self._runtime.restore_room(
-                    self._room.area_id, state, RoomExtraData.unit_from_dict(data)
-                )
 
     @property
     def extra_restore_state_data(self) -> RoomExtraData:
