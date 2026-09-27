@@ -1,4 +1,5 @@
-# Tests, coverage floor, lint, type checking and hassfest on every push to main (and on pull requests).
+# Tests, coverage floor, lint, formatting, type checking, repository rules and hassfest on every push
+# to main (and on pull requests).
 name: CI
 
 on:
@@ -13,6 +14,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         run: |
@@ -31,10 +34,29 @@ jobs:
           --cov-branch --cov-report=term-missing --cov-fail-under=97
 
       - name: Lint
-        run: uvx ruff@0.16.9 check custom_components tests
+        run: uvx ruff@0.16.9 check custom_components tests scripts
 
       - name: Format
-        run: uvx ruff@0.16.9 format --check custom_components tests
+        run: uvx ruff@0.16.9 format --check custom_components tests scripts
+
+      - name: No design references in the code
+        run: .venv/bin/python scripts/check_rules.py references
+
+      - name: Commit messages
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        # A force-push or a new branch has no usable "before", so only the tip is checked.
+        run: |
+          if [ -n "$PR_BASE" ]; then
+            range="$PR_BASE..$HEAD_SHA"
+          elif [ -n "$PUSH_BEFORE" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$HEAD_SHA"
+          else
+            range="$HEAD_SHA^!"
+          fi
+          .venv/bin/python scripts/check_rules.py commits "$range"
 
       - name: Type check
         run: |
