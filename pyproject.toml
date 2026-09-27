@@ -18,3 +18,6 @@ select = ["F", "E", "W", "B", "I", "UP", "SIM", "C4", "PIE", "RUF", "PT"]
 known-first-party = ["custom_components"]
 combine-as-imports = true
 force-sort-within-sections = true
+
+[tool.codespell]
+ignore-words-list = "hass"
