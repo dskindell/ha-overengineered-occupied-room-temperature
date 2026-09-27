@@ -17,6 +17,7 @@ OORT doesn't talk to any hardware itself. It reads sensors and template results 
   - [Create a zone](#create-a-zone)
   - [Change a zone later](#change-a-zone-later)
   - [Settings](#settings)
+  - [Tuning the taus](#tuning-the-taus)
   - [Rooms](#rooms)
   - [People](#people)
 - [Entities](#entities)
@@ -118,6 +119,47 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. In the **Zone** section; rooms can't override it. | 5 |
 
 Validation: person and occupancy taus must be greater than 0; open and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1.
+
+### Tuning the taus
+
+The defaults suit most homes. These charts show what they do, and how a different tau would change it.
+
+With the default settings, a room's weight rises like this when someone arrives:
+
+![Weight rising with the default settings: a tracked person takes a room from 0 to 0.63 in 3 minutes, an occupancy sensor from 0 to 0.32 in 10 minutes](docs/images/default-rise.svg)
+
+and falls like this when something changes:
+
+![Weight falling with the default settings: open in 1 minute, person fall in 3, dropout in 5, occupancy fall in 8](docs/images/default-fall.svg)
+
+Every tau follows the same curve, stretched in time. After one tau the weight has covered 63% of the distance to its new target, after three taus 95%:
+
+![Share of the change completed over time for taus of 1, 3, 5, 10 and 20 minutes](docs/images/tau-comparison.svg)
+
+| Tau | Halfway | 90% | 95% | 99% |
+|---|---|---|---|---|
+| 1 min (open) | 0.7 min | 2.3 min | 3 min | 4.6 min |
+| 3 min (person rise and fall) | 2.1 min | 6.9 min | 9 min | 14 min |
+| 5 min (dropout) | 3.5 min | 12 min | 15 min | 23 min |
+| 8 min (occupancy fall) | 5.5 min | 18 min | 24 min | 37 min |
+| 10 min (occupancy rise) | 6.9 min | 23 min | 30 min | 46 min |
+| any tau | 0.69 × tau | 2.3 × tau | 3 × tau | 4.6 × tau |
+
+What the thermostat sees is each room's **share** of the total weight, so a tau matters most when people move between rooms. In this example a tracked person steps out of the living room into the kitchen for 5 minutes, comes back, and 20 minutes later moves to the kitchen for good. The chart shows the living room's share of the zone temperature for three person fall taus:
+
+![Living room share of the zone temperature during a 5-minute trip to the kitchen and a later move, for person fall taus of 3, 10 and 20 minutes](docs/images/short-trip.svg)
+
+- **3 minutes (default):** the zone follows the person closely. The living room's share drops to 19% during the trip, and after the real move it's under 5% within 10 minutes.
+- **10 or 20 minutes:** the living room stays at 43–49% through the trip, so short trips out barely move the temperature. The cost comes after a real move: 10 minutes later the living room still makes up 28% (tau 10) or 38% (tau 20). The kitchen falls just as slowly after the trip, which is why the living room only gets back to 77–90% before the move.
+
+Rules of thumb:
+
+- **Person rise** and **occupancy rise**: raise them if walking through a room (a hallway, the kitchen on the way to the garage) pulls the temperature around; lower them if the system takes too long to notice where you are.
+- **Person fall** and **occupancy fall**: raise them to keep a room counted through short trips out, or through gaps in a motion sensor that goes off while you sit still. Lower them if the temperature keeps following a room you have left.
+- **Open**: keep it short. An open window soon makes the room's reading misleading.
+- **Dropout**: long enough to ride out a sensor briefly going offline, short enough that a dead sensor isn't trusted for long. Its last reading is dropped anyway once the stale limit passes.
+
+Taus can be set for the whole zone on the **Settings** screen, or for one room under its **Overrides**, for example a longer occupancy fall tau for a room with a twitchy motion sensor.
 
 ### Rooms
 
