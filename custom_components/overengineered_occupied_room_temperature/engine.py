@@ -171,8 +171,7 @@ def select_tau_name(
     tracked person has just left, but whose occupancy sensor is still on, is
     falling from ``person``: it uses person fall for as long as it stays
     ``occupied``. An empty room *below* its unoccupied weight (after being
-    open or dropped out, or when new) is rising, so it uses occupancy rise
-.
+    open or dropped out, or when new) is rising, so it uses occupancy rise.
     """
     if status is Status.PERSON:
         return TauName.PERSON_RISE
@@ -369,9 +368,7 @@ def step_zone(
         for key, (state, inputs, config) in rooms.items()
     }
     epsilon = (
-        fallback_epsilon(config.weights.base for _, _, config in rooms.values())
-        if rooms
-        else 0.0
+        fallback_epsilon(config.weights.base for _, _, config in rooms.values()) if rooms else 0.0
     )
     result = aggregate(
         (

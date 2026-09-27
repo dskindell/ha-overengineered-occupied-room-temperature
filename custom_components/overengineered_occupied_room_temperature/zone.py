@@ -10,8 +10,6 @@ import logging
 import math
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
@@ -40,10 +38,10 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.template import Template, result_as_boolean
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
+import voluptuous as vol
 
 from .const import (
     CONF_DEFAULTS,
-    CONF_ZONE_SETTINGS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
@@ -57,11 +55,12 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
+    CONF_ZONE_SETTINGS,
     DOMAIN,
     GRACE_PERIOD_SECONDS,
+    ROOM_SETTINGS,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
-    ROOM_SETTINGS,
     ZONE_SETTINGS,
     with_defaults,
 )
@@ -181,9 +180,7 @@ class ZoneRuntime:
         # The zone's unit, fixed when it was created: used for every conversion
         # and as the Temperature sensor's unit, so a unit-system switch can't
         # double-convert the output. Home Assistant converts it for display.
-        self.unit: str = entry.data.get(
-            CONF_TEMPERATURE_UNIT, hass.config.units.temperature_unit
-        )
+        self.unit: str = entry.data.get(CONF_TEMPERATURE_UNIT, hass.config.units.temperature_unit)
         self.entry = entry
         areas = ar.async_get(hass)
         options = entry.options

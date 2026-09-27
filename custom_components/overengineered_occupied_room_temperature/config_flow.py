@@ -14,8 +14,6 @@ import math
 from typing import Any
 from uuid import uuid4
 
-import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryBaseFlow,
@@ -26,13 +24,13 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import area_registry as ar, selector
+import voluptuous as vol
 
 from .const import (
     CHOICE_ADD,
     CHOICE_DONE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
-    CONF_ZONE_SETTINGS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
@@ -50,12 +48,13 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
+    CONF_ZONE_SETTINGS,
     DOMAIN,
     ROOM_SETTINGS,
     SETTINGS,
-    ZONE_SETTINGS,
     VALUE_TYPE_AREA_ID,
     VALUE_TYPE_AREA_NAME,
+    ZONE_SETTINGS,
     with_defaults,
 )
 
@@ -365,9 +364,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
 
     # -- people ---------------------------------------------------------------
 
-    async def async_step_people(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_people(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Pick a person to edit, add one, or go back to the menu."""
         if user_input is not None:
             choice = user_input[CONF_PERSON]
@@ -381,9 +378,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
             data_schema=_choice_schema(CONF_PERSON, items, "Add a new person"),
         )
 
-    async def async_step_person(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_person(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add or edit a person, step 1: name and location entity."""
         errors: dict[str, str] = {}
         person_id = self._person_id
@@ -483,9 +478,7 @@ class OortConfigFlow(ZoneMenu, ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_finish(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Create the zone with everything set up in the menu."""
         # Checked again here: another flow may have created the name meanwhile.
         if self._name_taken(self._name):

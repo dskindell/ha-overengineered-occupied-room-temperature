@@ -15,8 +15,8 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
 from . import OortConfigEntry
+from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
 from .storage import RoomExtraData
 from .zone import Room, ZoneRuntime, room_unique_id, temperature_unique_id
 

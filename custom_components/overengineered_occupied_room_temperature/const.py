@@ -99,13 +99,19 @@ class Setting:
 
 def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
     return Setting(
-        key, default, 0.0, MAX_TAU,
-        "tau_negative" if zero_allowed else "tau_not_positive", "tau_too_large",
+        key,
+        default,
+        0.0,
+        MAX_TAU,
+        "tau_negative" if zero_allowed else "tau_not_positive",
+        "tau_too_large",
         minimum_allowed=zero_allowed,
     )
 
 
-def _weight(key: str, default: float, minimum: float = 0.0, too_small: str = "weight_negative") -> Setting:
+def _weight(
+    key: str, default: float, minimum: float = 0.0, too_small: str = "weight_negative"
+) -> Setting:
     return Setting(key, default, minimum, MAX_WEIGHT, too_small, "weight_too_large")
 
 
@@ -120,9 +126,14 @@ SETTINGS: Final = (
     _weight(CONF_W_OCCUPIED, 0.5),
     _weight(CONF_W_BASE, 0.001, MIN_BASE_WEIGHT, "base_weight_too_small"),
     Setting(
-        CONF_STALE_LIMIT, 5.0, 0.0, MAX_STALE_LIMIT,
-        "stale_limit_not_positive", "stale_limit_too_large",
-        minimum_allowed=False, per_room=False,
+        CONF_STALE_LIMIT,
+        5.0,
+        0.0,
+        MAX_STALE_LIMIT,
+        "stale_limit_not_positive",
+        "stale_limit_too_large",
+        minimum_allowed=False,
+        per_room=False,
     ),
 )
 DEFAULTS: Final[dict[str, float]] = {setting.key: setting.default for setting in SETTINGS}

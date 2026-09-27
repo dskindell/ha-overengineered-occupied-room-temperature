@@ -5,13 +5,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
-import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.helpers import area_registry as ar
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.overengineered_occupied_room_temperature.config_flow import (
     validate_settings,
@@ -21,7 +20,6 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CHOICE_DONE,
     CONF_AREA_ID,
     CONF_DEFAULTS,
-    CONF_ZONE_SETTINGS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
@@ -38,11 +36,12 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_TEMPERATURE_SENSOR,
     CONF_TEMPERATURE_SENSORS,
     CONF_VALUE_TYPE,
+    CONF_ZONE_SETTINGS,
     DEFAULTS,
     DOMAIN,
     ROOM_SETTINGS,
-    ZONE_SETTINGS,
     SETTINGS,
+    ZONE_SETTINGS,
     Setting,
 )
 
@@ -186,7 +185,7 @@ async def test_create_zone_full_journey(hass: HomeAssistant) -> None:
 
     await flow.menu(CONF_DEFAULTS)
     assert flow.step == CONF_DEFAULTS
-    await flow.submit(settings_input(**{"w_person": 0.8}))
+    await flow.submit(settings_input(w_person=0.8))
     assert flow.step == "menu"
 
     await flow.add_room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]})
@@ -203,11 +202,14 @@ async def test_create_zone_full_journey(hass: HomeAssistant) -> None:
     assert result["title"] == "Home"
     assert result["data"] == {CONF_NAME: "Home", "temperature_unit": "°C"}
     options = result["options"]
-    assert {CONF_DEFAULTS: options[CONF_DEFAULTS], CONF_ZONE_SETTINGS: options[CONF_ZONE_SETTINGS]} == (
-        stored_settings(w_person=0.8)
-    )
+    assert {
+        CONF_DEFAULTS: options[CONF_DEFAULTS],
+        CONF_ZONE_SETTINGS: options[CONF_ZONE_SETTINGS],
+    } == (stored_settings(w_person=0.8))
     assert options[CONF_ROOMS] == {
-        "kitchen": room_data("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]})
+        "kitchen": room_data(
+            "kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}
+        )
     }
     [person] = options[CONF_PEOPLE].values()
     assert person == {
@@ -280,7 +282,7 @@ async def test_defaults_form_rejects_negative_numbers(hass: HomeAssistant) -> No
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)
     with pytest.raises(InvalidData):
-        await flow.submit(settings_input(**{"w_person": -1}))
+        await flow.submit(settings_input(w_person=-1))
 
 
 @pytest.mark.parametrize("key", ["tau_person_rise", "tau_dropout", "w_person", "stale_limit"])
@@ -308,7 +310,7 @@ async def test_defaults_form_rejects_values_over_the_limits(
 async def test_defaults_form_accepts_values_at_the_limits(hass: HomeAssistant) -> None:
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)
-    await flow.submit(settings_input(**{"tau_occupancy_fall": 1440, "w_person": 1, "stale_limit": 1440}))
+    await flow.submit(settings_input(tau_occupancy_fall=1440, w_person=1, stale_limit=1440))
     assert flow.step == "menu"
 
 
@@ -354,7 +356,7 @@ async def test_zone_wide_settings_have_their_own_section(hass: HomeAssistant) ->
 async def test_zero_deactivate_and_dropout_taus_allowed(hass: HomeAssistant) -> None:
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)
-    await flow.submit(settings_input(**{"tau_deactivate": 0, "tau_dropout": 0}))
+    await flow.submit(settings_input(tau_deactivate=0, tau_dropout=0))
     assert flow.step == "menu"
 
 
@@ -409,7 +411,10 @@ async def test_blank_optional_room_fields_are_dropped(hass: HomeAssistant) -> No
     result = await flow.menu("finish")
     assert result["options"][CONF_ROOMS]["kitchen"] == room_data(
         "kitchen",
-        **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.motion"], CONF_OVERRIDES: {"tau_person_rise": 4}},
+        **{
+            CONF_OCCUPANCY_SENSORS: ["binary_sensor.motion"],
+            CONF_OVERRIDES: {"tau_person_rise": 4},
+        },
     )
 
 
@@ -458,14 +463,13 @@ async def test_edit_room_keeps_area_and_prefills(hass: HomeAssistant) -> None:
     result = await flow.menu("save")
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_ROOMS]["kitchen"] == room_data(
-        "kitchen", **{CONF_TEMPERATURE_SENSORS: ["sensor.new"], CONF_OCCUPANCY_TEMPLATE: "{{ true }}"}
+        "kitchen",
+        **{CONF_TEMPERATURE_SENSORS: ["sensor.new"], CONF_OCCUPANCY_TEMPLATE: "{{ true }}"},
     )
 
 
 async def test_remove_room(hass: HomeAssistant) -> None:
-    entry = zone_entry(
-        hass, rooms={"kitchen": room_data("kitchen"), "office": room_data("office")}
-    )
+    entry = zone_entry(hass, rooms={"kitchen": room_data("kitchen"), "office": room_data("office")})
     flow = await start_configure(hass, entry)
     await flow.menu(CONF_ROOMS)
     await flow.submit({CONF_ROOM: "office"})
@@ -603,7 +607,7 @@ async def test_configure_defaults_prefilled_and_saved(hass: HomeAssistant) -> No
         if key.description
     }
     assert suggested["w_person"] == 0.8
-    await flow.submit(settings_input(**{"w_person": 0.9}))
+    await flow.submit(settings_input(w_person=0.9))
     await flow.menu("save")
     assert entry.options[CONF_DEFAULTS]["w_person"] == 0.9
     assert entry.options[CONF_ROOMS] == {"kitchen": room_data("kitchen")}
@@ -612,7 +616,11 @@ async def test_configure_defaults_prefilled_and_saved(hass: HomeAssistant) -> No
 async def test_configure_fills_in_settings_missing_from_an_older_zone(hass: HomeAssistant) -> None:
     """A setting added since the zone was saved shows its default; unknown keys go."""
     entry = zone_entry(hass)
-    stored = {key: value for key, value in DEFAULTS.items() if key in ROOM_SETTINGS and key != "tau_dropout"}
+    stored = {
+        key: value
+        for key, value in DEFAULTS.items()
+        if key in ROOM_SETTINGS and key != "tau_dropout"
+    }
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, CONF_DEFAULTS: {**stored, "retired_setting": 7}}
     )
@@ -675,7 +683,7 @@ async def test_smallest_unoccupied_weight_is_accepted(hass: HomeAssistant) -> No
     """0.001 is the minimum (and the default)."""
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)
-    await flow.submit(settings_input(**{"w_base": 0.001}))
+    await flow.submit(settings_input(w_base=0.001))
     assert flow.step == "menu"
 
 

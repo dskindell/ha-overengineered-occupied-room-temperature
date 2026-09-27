@@ -6,10 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from homeassistant.data_entry_flow import section
 import pytest
 import voluptuous as vol
-
-from homeassistant.data_entry_flow import section
 
 from custom_components.overengineered_occupied_room_temperature import config_flow as flow
 from custom_components.overengineered_occupied_room_temperature.const import CONF_PERSON, CONF_ROOM

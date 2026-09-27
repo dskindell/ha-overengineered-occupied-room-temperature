@@ -4,11 +4,9 @@ from dataclasses import fields, replace
 from itertools import pairwise
 import math
 from types import EllipsisType
-from typing import Any
+from typing import Any, ClassVar
 
 import const  # the integration's constants; no Home Assistant imports
-import pytest
-
 from engine import (
     Aggregate,
     RoomInputs,
@@ -28,6 +26,7 @@ from engine import (
     step_zone,
     target_weight,
 )
+import pytest
 
 MINUTE = 60.0
 
@@ -36,6 +35,7 @@ def select_tau(status: Status, last: Status | None, taus: Taus, **history: Any) 
     """The tau value ``select_tau_name`` picks, as step_room looks it up."""
     tau: float = getattr(taus, select_tau_name(status, last, **history))
     return tau
+
 
 CONFIG = room_config(const.DEFAULTS, {})
 
@@ -50,8 +50,14 @@ def inputs(
     return RoomInputs(open=open, person_present=person, occupied=occupied, temperature=temperature)
 
 
-def run(state: RoomState, room_inputs: RoomInputs, minutes: float, *, start: float = 0.0,
-        step: float = 1.0) -> RoomState:
+def run(
+    state: RoomState,
+    room_inputs: RoomInputs,
+    minutes: float,
+    *,
+    start: float = 0.0,
+    step: float = 1.0,
+) -> RoomState:
     """Step a room once per ``step`` minutes for ``minutes``, starting at ``start``."""
     t = start
     state = step_room(state, room_inputs, CONFIG, t)
@@ -194,9 +200,7 @@ class TestStepRoom:
 
     def test_piecewise_uses_previous_target_for_elapsed_time(self) -> None:
         # Occupied at 0.5; a person arrives 30 s after the last update.
-        state = RoomState(
-            weight=0.5, target=0.5, tau=10.0, status=Status.OCCUPIED, last_update=0.0
-        )
+        state = RoomState(weight=0.5, target=0.5, tau=10.0, status=Status.OCCUPIED, last_update=0.0)
         state = step_room(state, inputs(person=True), CONFIG, 30.0)
         assert state.weight == pytest.approx(0.5)  # not pulled toward 1.0 yet
         assert state.target == 1.0
@@ -318,8 +322,14 @@ class TestZeroTauIsInstant:
     """A tau of 0 reaches the new target in the same step."""
 
     PERSON = RoomState(
-        weight=1.0, target=1.0, tau=3.0, tau_name=TauName.PERSON_RISE, status=Status.PERSON,
-        last_update=0.0, last_known_temperature=70.0, last_seen=0.0,
+        weight=1.0,
+        target=1.0,
+        tau=3.0,
+        tau_name=TauName.PERSON_RISE,
+        status=Status.PERSON,
+        last_update=0.0,
+        last_known_temperature=70.0,
+        last_seen=0.0,
     )
     INSTANT = replace(CONFIG, taus=replace(CONFIG.taus, deactivate=0.0, dropout=0.0))
 
@@ -332,9 +342,7 @@ class TestZeroTauIsInstant:
         assert (state.weight, state.tau_name) == (0.0, TauName.DROPOUT)
 
     def test_grace_hold_still_freezes_the_weight(self) -> None:
-        state = step_room(
-            self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0, hold=True
-        )
+        state = step_room(self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0, hold=True)
         assert state.weight == 1.0
 
     def test_positive_tau_still_starts_from_the_current_weight(self) -> None:
@@ -345,7 +353,7 @@ class TestZeroTauIsInstant:
 def sample(
     weight: float,
     usable: float | None,
-    current: float | None | EllipsisType = ...,
+    current: float | EllipsisType | None = ...,
     *,
     closed: bool = True,
 ) -> RoomSample:
@@ -375,7 +383,7 @@ class TestAggregate:
         # One occupied cold room and one warm room, both open and fading together.
         eps = fallback_epsilon([0.001])
         readings = []
-        for minutes in range(0, 31):
+        for minutes in range(31):
             fade = math.exp(-minutes)  # deactivate tau = 1 min
             result = aggregate(
                 [sample(1.0 * fade, 64.0, closed=False), sample(0.001 * fade, 74.0, closed=False)],
@@ -412,9 +420,7 @@ class TestAggregate:
         assert result.fallback
 
     def test_fallback_prefers_a_closed_rooms_recent_reading_over_an_open_live_one(self) -> None:
-        result = aggregate(
-            [sample(0.0, 20.0, None), sample(0.0, 12.0, closed=False)], 0.00001
-        )
+        result = aggregate([sample(0.0, 20.0, None), sample(0.0, 12.0, closed=False)], 0.00001)
         assert result.temperature == pytest.approx(20.0)
 
     def test_fallback_uses_open_rooms_when_every_room_is_open(self) -> None:
@@ -435,10 +441,17 @@ class TestAggregate:
 
 
 class TestRoomConfig:
-    DEFAULTS = {
-        "tau_person_rise": 3.0, "tau_person_fall": 3.0, "tau_occupancy_rise": 10.0,
-        "tau_occupancy_fall": 8.0, "tau_deactivate": 1.0, "tau_dropout": 5.0,
-        "w_person": 1.0, "w_occupied": 0.5, "w_base": 0.001, "stale_limit": 5.0,
+    DEFAULTS: ClassVar[dict[str, float]] = {
+        "tau_person_rise": 3.0,
+        "tau_person_fall": 3.0,
+        "tau_occupancy_rise": 10.0,
+        "tau_occupancy_fall": 8.0,
+        "tau_deactivate": 1.0,
+        "tau_dropout": 5.0,
+        "w_person": 1.0,
+        "w_occupied": 0.5,
+        "w_base": 0.001,
+        "stale_limit": 5.0,
     }
 
     def test_overrides_replace_defaults(self) -> None:
