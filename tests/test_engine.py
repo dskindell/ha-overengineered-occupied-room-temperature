@@ -115,7 +115,7 @@ class TestSelectTau:
 
     def test_rises(self) -> None:
         assert select_tau(Status.PERSON, None, self.taus) == 1
-        assert select_tau(Status.OCCUPIED, None, self.taus) == 3
+        assert select_tau(Status.OCCUPIED, None, self.taus, rising=True) == 3
 
     def test_fall_uses_last_occupied_state(self) -> None:
         assert select_tau(Status.UNOCCUPIED, Status.PERSON, self.taus) == 2
@@ -136,8 +136,9 @@ class TestSelectTau:
             (Status.DROPOUT, None, TauName.DROPOUT),
         ]
         for status, last, name in cases:
-            assert select_tau_name(status, last) is name
-            assert select_tau(status, last, self.taus) == getattr(self.taus, name)
+            rising = status is Status.OCCUPIED
+            assert select_tau_name(status, last, rising=rising) is name
+            assert select_tau(status, last, self.taus, rising=rising) == getattr(self.taus, name)
 
 
 class TestPersonLeavesOccupiedRoom:
@@ -160,8 +161,17 @@ class TestPersonLeavesOccupiedRoom:
 
     def test_arriving_at_occupied_from_elsewhere_still_rises(self) -> None:
         for previous in (None, Status.UNOCCUPIED, Status.OPEN, Status.DROPOUT, Status.OCCUPIED):
-            name = select_tau_name(Status.OCCUPIED, None, previous_status=previous)
-            assert name is TauName.OCCUPANCY_RISE, previous
+            for last in (None, Status.PERSON, Status.OCCUPIED):
+                name = select_tau_name(Status.OCCUPIED, last, previous_status=previous, rising=True)
+                assert name is TauName.OCCUPANCY_RISE, (previous, last)
+
+    def test_inverted_weights_rise_from_person_on_person_fall(self) -> None:
+        config = replace(CONFIG, weights=Weights(person=0.3, occupied=0.8, base=0.001))
+        state = RoomState(
+            weight=0.3, target=0.3, status=Status.PERSON, last_occupied_state=Status.PERSON
+        )
+        state = step_room(state, inputs(occupied=True), config, 0.0)
+        assert (state.target, state.tau_name) == (0.8, TauName.PERSON_FALL)
 
     def test_person_then_occupied_then_empty(self) -> None:
         config = replace(CONFIG, taus=self.taus)
@@ -189,6 +199,42 @@ class TestPersonLeavesOccupiedRoom:
         # The sensor turns off: sensor occupancy is what ends now.
         state = step_room(state, inputs(), config, 2 * MINUTE)
         assert (state.status, state.tau_name) == (Status.UNOCCUPIED, TauName.OCCUPANCY_FALL)
+
+
+class TestFallingIntoOccupied:
+    """A room that becomes occupied from above the occupied weight keeps falling."""
+
+    def test_uses_person_fall(self) -> None:
+        for last in (None, Status.PERSON, Status.OCCUPIED):
+            for previous in (Status.UNOCCUPIED, Status.OPEN, Status.DROPOUT):
+                name = select_tau_name(Status.OCCUPIED, last, previous_status=previous)
+                assert name is TauName.PERSON_FALL, (last, previous)
+
+    def test_occupancy_returning_after_a_person_left_continues_the_person_fall(self) -> None:
+        state = RoomState(
+            weight=1.0, target=1.0, status=Status.PERSON, last_occupied_state=Status.PERSON
+        )
+        state = step_room(state, inputs(), CONFIG, 0.0)  # the person leaves; motion off
+        assert state.tau_name is TauName.PERSON_FALL
+        state = step_room(state, inputs(occupied=True), CONFIG, MINUTE)  # motion returns
+        assert (state.status, state.target, state.tau_name) == (
+            Status.OCCUPIED,
+            0.5,
+            TauName.PERSON_FALL,
+        )
+        assert state.weight > 0.5
+        state = step_room(state, inputs(occupied=True), CONFIG, 2 * MINUTE)
+        assert state.tau_name is TauName.PERSON_FALL
+
+    def test_a_brief_open_period_during_a_person_fall_resumes_the_person_fall(self) -> None:
+        state = RoomState(
+            weight=1.0, target=1.0, status=Status.PERSON, last_occupied_state=Status.PERSON
+        )
+        state = step_room(state, inputs(occupied=True), CONFIG, 0.0)  # the person leaves
+        state = step_room(state, inputs(open=True, occupied=True), CONFIG, 10.0)
+        state = step_room(state, inputs(occupied=True), CONFIG, 20.0)  # closed again
+        assert state.weight > 0.5
+        assert state.tau_name is TauName.PERSON_FALL
 
 
 class TestStepRoom:

@@ -169,8 +169,10 @@ def select_tau_name(
     the choice is correct whatever order the weights are configured in. A room a
     tracked person has just left, but whose occupancy sensor is still on, is
     falling from ``person``: it uses person fall for as long as it stays
-    ``occupied``. An empty room *below* its unoccupied weight (after being
-    open or dropped out, or when new) is rising, so it uses occupancy rise.
+    ``occupied``. So does a room that becomes ``occupied`` from above the occupied
+    weight: only a person leaves a room that high. An empty room *below* its
+    unoccupied weight (after being open or dropped out, or when new) is rising,
+    so it uses occupancy rise.
     """
     if status is Status.PERSON:
         return TauName.PERSON_RISE
@@ -179,7 +181,7 @@ def select_tau_name(
             previous_status is Status.OCCUPIED and previous_tau_name is TauName.PERSON_FALL
         ):
             return TauName.PERSON_FALL
-        return TauName.OCCUPANCY_RISE
+        return TauName.OCCUPANCY_RISE if rising else TauName.PERSON_FALL
     if status is Status.UNOCCUPIED:
         if rising:
             return TauName.OCCUPANCY_RISE
