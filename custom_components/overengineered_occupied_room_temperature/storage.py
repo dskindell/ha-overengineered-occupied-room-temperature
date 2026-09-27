@@ -2,28 +2,28 @@
 
 Home Assistant keeps it as the room weight sensor's restore "extra data", across
 restarts and reloads. Reading it is tolerant: fields the engine no longer has
-are ignored and fields it has gained take their defaults, so changing ``RoomState``
-doesn't reset every room to 0.
+are ignored, and fields it has gained or that hold a bad value take their
+defaults, so changing ``RoomState`` doesn't reset every room to 0. Only a bad
+weight, target, tau or status makes a room start afresh.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
+from enum import StrEnum
 import math
 from typing import Any, Final
 
 from homeassistant.helpers.restore_state import ExtraStoredData
 
+from .const import MAX_WEIGHT
 from .engine import RoomState, Status, TauName
 
 # Bump when a field's meaning changes, and convert older data in saved_room_state.
 SAVED_VERSION: Final = 1
 KEY_VERSION: Final = "version"
 KEY_UNIT: Final = "temperature_unit"
-# Without these a saved state means nothing; the room then starts afresh.
-_REQUIRED: Final = ("weight", "target", "tau", "status")
-_NUMBERS: Final = ("weight", "target", "tau")
 # Inputs are replaced by the first update after a restore, so they aren't saved.
 _UNSAVED: Final = frozenset({"inputs"})
 _FIELDS: Final = frozenset(field.name for field in fields(RoomState)) - _UNSAVED
@@ -51,22 +51,39 @@ def saved_unit(data: Mapping[str, Any]) -> str | None:
     return unit if isinstance(unit, str) else None
 
 
-def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
-    """A room's engine state from its saved extra data, or None if unusable."""
-    values = {key: value for key, value in data.items() if key in _FIELDS}
-    if any(key not in values for key in _REQUIRED):
-        return None
-    for key in _NUMBERS:
-        value = values[key]
-        is_number = isinstance(value, int | float) and not isinstance(value, bool)
-        if not is_number or not math.isfinite(value):
-            return None
+def _number(value: Any) -> float | None:
+    is_number = isinstance(value, int | float) and not isinstance(value, bool)
+    return float(value) if is_number and math.isfinite(value) else None
+
+
+def _member[E: StrEnum](kind: type[E], value: Any) -> E | None:
     try:
-        values["status"] = Status(values["status"])
-        if values.get("last_occupied_state") is not None:
-            values["last_occupied_state"] = Status(values["last_occupied_state"])
-        if values.get("tau_name") is not None:
-            values["tau_name"] = TauName(values["tau_name"])
+        return kind(value)
     except ValueError:
         return None
-    return RoomState(**values)
+
+
+def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
+    """A room's engine state from its saved extra data, or None if unusable."""
+    weight, target, tau = (_number(data.get(key)) for key in ("weight", "target", "tau"))
+    status = _member(Status, data.get("status"))
+    if weight is None or target is None or tau is None or status is None:
+        return None
+    if not (0 <= weight <= MAX_WEIGHT and 0 <= target <= MAX_WEIGHT and tau >= 0):
+        return None
+    last_occupied_state = _member(Status, data.get("last_occupied_state"))
+    return RoomState(
+        weight=weight,
+        target=target,
+        tau=tau,
+        tau_name=_member(TauName, data.get("tau_name")),
+        status=status,
+        last_occupied_state=(
+            last_occupied_state if last_occupied_state in (Status.PERSON, Status.OCCUPIED) else None
+        ),
+        last_known_temperature=_number(data.get("last_known_temperature")),
+        last_seen=_number(data.get("last_seen")),
+        dropout_since=_number(data.get("dropout_since")),
+        stale=data.get("stale") is True,
+        last_update=_number(data.get("last_update")),
+    )

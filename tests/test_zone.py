@@ -7,7 +7,7 @@ import math
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.config_entries import ConfigEntryDisabler
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, UnitOfTemperature
 from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import (
@@ -1524,6 +1524,16 @@ async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssis
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8)
+
+
+async def test_zone_loads_when_saved_optional_fields_are_bad(hass: HomeAssistant) -> None:
+    bad = {"last_known_temperature": "warm", "last_seen": "yesterday", "dropout_since": [1]}
+    mock_restore_cache_with_extra_data(hass, [(State(KITCHEN_WEIGHT, "0.8"), {**SAVED, **bad})])
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    assert entry.state is ConfigEntryState.LOADED
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8)
 
 
