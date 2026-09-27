@@ -1,13 +1,18 @@
 """Tests for the pure weighting, smoothing and averaging rules."""
 
+import ast
 from dataclasses import fields, replace
 from itertools import pairwise
 import math
+from pathlib import Path
+import sys
 from types import EllipsisType
 from typing import Any, ClassVar
 
-import const  # the integration's constants; no Home Assistant imports
-from engine import (
+import pytest
+
+from custom_components.overengineered_occupied_room_temperature import const, engine
+from custom_components.overengineered_occupied_room_temperature.engine import (
     Aggregate,
     RoomInputs,
     RoomSample,
@@ -26,7 +31,7 @@ from engine import (
     step_zone,
     target_weight,
 )
-import pytest
+from tests.helpers import stored_settings
 
 MINUTE = 60.0
 
@@ -473,6 +478,44 @@ class TestRoomConfig:
         assert engine_keys | {"stale_limit"} == set(const.DEFAULTS)
         assert engine_keys == set(const.ROOM_SETTINGS)
         assert self.DEFAULTS == const.DEFAULTS
+
+
+class TestRoomConfigs:
+    OPTIONS: ClassVar[dict[str, Any]] = {
+        **stored_settings(w_occupied=0.4, stale_limit=10.0),
+        const.CONF_ROOMS: {
+            "kitchen": {const.CONF_OVERRIDES: {"tau_person_fall": 1.0}},
+            "office": {},
+        },
+    }
+
+    def test_rooms_get_their_overrides_over_the_zone_settings(self) -> None:
+        configs = const.room_configs(self.OPTIONS)
+        assert configs["kitchen"].taus.person_fall == 1.0
+        assert configs["office"].taus.person_fall == const.DEFAULTS["tau_person_fall"]
+        assert {c.weights.occupied for c in configs.values()} == {0.4}
+        assert {c.stale_limit for c in configs.values()} == {10.0}
+
+    def test_without_overrides_every_room_uses_the_zone_settings(self) -> None:
+        configs = const.room_configs(self.OPTIONS, overrides=False)
+        assert configs["kitchen"] == configs["office"]
+        assert configs["kitchen"].weights.occupied == 0.4
+
+    def test_settings_not_stored_take_their_defaults(self) -> None:
+        configs = const.room_configs({const.CONF_ROOMS: {"kitchen": {}}})
+        assert configs["kitchen"] == room_config(const.DEFAULTS, {})
+
+
+def test_engine_imports_only_the_standard_library() -> None:
+    """The engine runs outside Home Assistant, e.g. to replay recorded inputs."""
+    tree = ast.parse(Path(engine.__file__).read_text())
+    modules = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules += [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            modules.append("." * node.level + (node.module or ""))
+    assert all(name.split(".")[0] in sys.stdlib_module_names for name in modules), modules
 
 
 class TestStepZone:

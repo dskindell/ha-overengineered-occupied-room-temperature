@@ -41,13 +41,11 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 import voluptuous as vol
 
 from .const import (
-    CONF_DEFAULTS,
     CONF_NAME,
     CONF_OCCUPANCY_SENSORS,
     CONF_OCCUPANCY_TEMPLATE,
     CONF_OPENING_SENSORS,
     CONF_OPENING_TEMPLATE,
-    CONF_OVERRIDES,
     CONF_PEOPLE,
     CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
@@ -55,22 +53,18 @@ from .const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
-    CONF_ZONE_SETTINGS,
     DOMAIN,
     GRACE_PERIOD_SECONDS,
-    ROOM_SETTINGS,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
-    ZONE_SETTINGS,
     has_occupancy_source,
-    with_defaults,
+    room_configs,
 )
 from .engine import (
     Aggregate,
     RoomConfig,
     RoomInputs,
     RoomState,
-    room_config,
     step_zone,
 )
 from .storage import saved_room_state, saved_unit
@@ -187,12 +181,7 @@ class ZoneRuntime:
         self.entry = entry
         areas = ar.async_get(hass)
         options = entry.options
-        # Settings added since the zone was saved get their defaults; room
-        # defaults and zone-wide settings are stored apart.
-        defaults = {
-            **with_defaults(options.get(CONF_DEFAULTS, {}), ROOM_SETTINGS),
-            **with_defaults(options.get(CONF_ZONE_SETTINGS, {}), ZONE_SETTINGS),
-        }
+        configs = room_configs(options)
         self.rooms: dict[str, Room] = {}
         for area_id, data in options[CONF_ROOMS].items():
             area = areas.async_get_area(area_id)
@@ -205,7 +194,7 @@ class ZoneRuntime:
                 opening_sensors=list(data.get(CONF_OPENING_SENSORS, [])),
                 opening_template=self._template(data.get(CONF_OPENING_TEMPLATE)),
                 has_occupancy_source=has_occupancy_source(data),
-                config=room_config(defaults, data.get(CONF_OVERRIDES, {})),
+                config=configs[area_id],
             )
         self.people: list[Person] = [
             Person(

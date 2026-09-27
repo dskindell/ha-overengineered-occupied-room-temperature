@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from .engine import RoomConfig, room_config
+
 DOMAIN: Final = "overengineered_occupied_room_temperature"
 
 # Zone (config entry): `data` holds the name and the temperature unit; `options`
@@ -160,3 +162,19 @@ def with_defaults(stored: Mapping[str, float], keys: tuple[str, ...]) -> dict[st
     without recreating zones.
     """
     return {key: stored.get(key, DEFAULTS[key]) for key in keys}
+
+
+def room_configs(options: Mapping[str, Any], *, overrides: bool = True) -> dict[str, RoomConfig]:
+    """Each room's effective settings from a zone's stored options, by area ID.
+
+    With ``overrides=False`` every room uses the zone defaults (e.g. to replay
+    recorded inputs without the per-room overrides).
+    """
+    defaults = {
+        **with_defaults(options.get(CONF_DEFAULTS, {}), ROOM_SETTINGS),
+        **with_defaults(options.get(CONF_ZONE_SETTINGS, {}), ZONE_SETTINGS),
+    }
+    return {
+        area_id: room_config(defaults, room.get(CONF_OVERRIDES, {}) if overrides else {})
+        for area_id, room in options.get(CONF_ROOMS, {}).items()
+    }
