@@ -107,7 +107,7 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Field | Description | Default |
 |---|---|---|
 | Person rise tau | How fast a room's weight rises when a tracked person arrives. | 3 |
-| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly open or dropped out during that fall (for example while its temperature sensor reconnects after a restart), it finishes the fall at the occupancy rise speed instead. | 3 |
+| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly open or dropped out during that fall (for example while its temperature sensor reconnects after a restart) and an occupancy sensor is still on, it finishes the fall at the occupancy rise speed instead. | 3 |
 | Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). Also used when an empty room climbs back up to the unoccupied weight — for example after being open, or when it's new. | 10 |
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
 | Open tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
@@ -183,13 +183,24 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in the
 |---|---|
 | `total_weight` | Sum of the weights of rooms that contributed a valid temperature (excludes the fallback term's weight), to 4 decimal places. Refreshed every minute and whenever the temperature, a room's status or its inputs change — not on every temperature reading. Not recorded in history. |
 | `contributing_rooms` | How many rooms contributed a valid temperature to the weighted average. |
-| `fallback` | `true` when the plain-average fallback term outweighs every room's own weighted contribution — see below. |
+| `fallback` | `true` when the fallback term's weight is more than the total weight of the rooms with a usable reading — see below. |
 
 ## Fallback and stale sensors
 
 Every room's temperature sensor is read continuously, whether or not the room is open. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature (including `nan` or `inf`), the room (status `dropout`) keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit** (counted from when it was last seen working), that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
 
-The overall `Temperature` sensor also has a small **fallback term**: a plain average of the rooms' current valid readings — rooms that aren't open first; open rooms' readings are used only if no closed room has a current or recent reading, with a fixed weight equal to 1% of your smallest room's unoccupied weight. This term is normally negligible next to any room with real weight, but it keeps the sensor producing a sensible number — rather than becoming unavailable — while every room is fading toward zero (for example, right after startup, or if every room is open at once). If every temperature sensor is down at once, the fallback uses the rooms' last readings instead, until they go stale. The `fallback` attribute turns `true` when this term's weight exceeds the sum of every room's own weight, which is your cue that the temperature is currently closer to a whole-home average than to an occupancy-weighted one.
+The `Temperature` sensor also includes a small **fallback term**: a plain average of room readings, with a fixed weight of 1% of your smallest room's unoccupied weight. It's negligible next to any room with real weight, but it keeps the output sensible — rather than unavailable — while every room is fading toward zero (for example right after startup, or when every room is open).
+
+The fallback averages the first of these that has any readings:
+
+1. closed rooms' current readings;
+2. closed rooms' last readings that aren't stale;
+3. any room's current readings;
+4. any room's last readings that aren't stale.
+
+So an open room is used only when no closed room has a reading, and during a total sensor outage the output holds the last readings until they go stale.
+
+The `fallback` attribute turns `true` when this term's weight is more than the total weight of the rooms with a usable reading — your cue that the temperature is closer to a whole-home average than to an occupancy-weighted one.
 
 Last readings are saved across restarts, so a normal reboot doesn't make the output jump while sensors reconnect. After a longer downtime, readings older than the stale limit aren't reused; each room joins in again as soon as its sensor reports.
 
