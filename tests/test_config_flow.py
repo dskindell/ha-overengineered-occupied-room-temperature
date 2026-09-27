@@ -45,19 +45,11 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     ZONE_SETTINGS,
     Setting,
 )
+from tests.helpers import stored_settings
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 FlowResult = dict[str, Any]
-
-
-def stored_settings(**changes: Any) -> dict[str, dict[str, Any]]:
-    """A zone's stored settings: room defaults and zone-wide settings apart."""
-    values = {**DEFAULTS, **changes}
-    return {
-        CONF_DEFAULTS: {key: values[key] for key in ROOM_SETTINGS},
-        CONF_ZONE_SETTINGS: {key: values[key] for key in ZONE_SETTINGS},
-    }
 
 
 def settings_input(**changes: Any) -> dict[str, Any]:

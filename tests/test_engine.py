@@ -465,6 +465,9 @@ class TestRoomConfig:
     def test_stale_limit_is_zone_wide(self) -> None:
         assert room_config(self.DEFAULTS, {"stale_limit": 60.0}).stale_limit == 5.0
 
+    def test_default_stale_limit_is_5_minutes(self) -> None:
+        assert const.DEFAULTS["stale_limit"] == 5
+
     def test_setting_keys_match_the_integration(self) -> None:
         """room_config builds keys from field names; they must be the stored keys."""
         engine_keys = {f"tau_{f.name}" for f in fields(Taus)} | {

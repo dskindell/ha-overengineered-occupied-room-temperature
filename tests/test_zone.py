@@ -46,11 +46,8 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_TEMPERATURE_SENSORS,
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
-    CONF_ZONE_SETTINGS,
     DEFAULTS,
     DOMAIN,
-    ROOM_SETTINGS,
-    ZONE_SETTINGS,
 )
 from custom_components.overengineered_occupied_room_temperature.engine import (
     RoomState,
@@ -58,14 +55,13 @@ from custom_components.overengineered_occupied_room_temperature.engine import (
     TauName,
 )
 from custom_components.overengineered_occupied_room_temperature.storage import (
-    SAVED_VERSION,
     RoomExtraData,
-    saved_room_state,
 )
 from custom_components.overengineered_occupied_room_temperature.zone import (
     repairs_issue_id,
     room_unique_id,
 )
+from tests.helpers import SAVED, stored_settings
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -97,12 +93,7 @@ def person(name: str, source: str, **fields: Any) -> tuple[str, str, dict[str, A
 
 def zone_options(items: list[tuple[str, str, dict[str, Any]]], **settings: float) -> dict[str, Any]:
     return {
-        CONF_DEFAULTS: {
-            key: value for key, value in {**DEFAULTS, **settings}.items() if key in ROOM_SETTINGS
-        },
-        CONF_ZONE_SETTINGS: {
-            key: value for key, value in {**DEFAULTS, **settings}.items() if key in ZONE_SETTINGS
-        },
+        **stored_settings(**settings),
         CONF_ROOMS: {key: data for kind, key, data in items if kind == "room"},
         CONF_PEOPLE: {key: data for kind, key, data in items if kind == "person"},
     }
@@ -148,11 +139,33 @@ async def setup_zone(
     return entry
 
 
-async def advance(hass: HomeAssistant, freezer: FrozenDateTimeFactory, minutes: int) -> None:
-    for _ in range(minutes):
-        freezer.tick(timedelta(minutes=1))
+async def advance(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, minutes: int = 0, *, seconds: float = 0
+) -> None:
+    """Move time on one minute at a time (so the minute timer fires), then by ``seconds``."""
+    steps = [timedelta(minutes=1)] * minutes + ([timedelta(seconds=seconds)] if seconds else [])
+    for step in steps:
+        freezer.tick(step)
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
+
+
+def record_states(hass: HomeAssistant) -> list[tuple[str, State]]:
+    """Collect every state written from now on."""
+    seen: list[tuple[str, State]] = []
+
+    def _on(event: Any) -> None:
+        if event.data["new_state"] is not None:
+            seen.append((event.data["entity_id"], event.data["new_state"]))
+
+    hass.bus.async_listen("state_changed", _on)
+    return seen
+
+
+async def start_home_assistant(hass: HomeAssistant) -> None:
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
 
 
 def weight(hass: HomeAssistant, entity_id: str) -> float:
@@ -826,10 +839,6 @@ async def test_total_outage_with_instant_dropout_holds_until_stale_limit(
     assert hass.states.get(TEMPERATURE).state == STATE_UNAVAILABLE
 
 
-def test_default_stale_limit_is_5_minutes() -> None:
-    assert DEFAULTS["stale_limit"] == 5
-
-
 @pytest.mark.parametrize(("downtime_minutes", "reading_used"), [(2, True), (120, False)])
 async def test_restored_reading_used_only_after_a_short_downtime(
     hass: HomeAssistant, downtime_minutes: int, reading_used: bool
@@ -1116,20 +1125,9 @@ async def test_saved_reading_is_converted_if_the_unit_changed_while_down(
 # ---------------------------------------------------------------------------
 
 
-def _record_states(hass: HomeAssistant) -> list[tuple[str, State]]:
-    seen: list[tuple[str, State]] = []
-
-    def _on(event: Any) -> None:
-        if event.data["new_state"] is not None:
-            seen.append((event.data["entity_id"], event.data["new_state"]))
-
-    hass.bus.async_listen("state_changed", _on)
-    return seen
-
-
 async def test_setup_never_writes_a_placeholder_state(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    seen = _record_states(hass)
+    seen = record_states(hass)
     await setup_zone(hass, [room("kitchen")])
     await hass.async_block_till_done()
     temperatures = [state.state for entity_id, state in seen if entity_id == TEMPERATURE]
@@ -1143,7 +1141,7 @@ async def test_reload_never_writes_a_placeholder_state(hass: HomeAssistant) -> N
     hass.states.async_set("sensor.alex_area", "Kitchen")
     entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     await hass.async_block_till_done()
-    seen = _record_states(hass)
+    seen = record_states(hass)
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     temperatures = [state.state for entity_id, state in seen if entity_id == TEMPERATURE]
@@ -1278,7 +1276,7 @@ async def test_re_added_room_starts_at_zero_not_its_old_state(
 
 async def test_first_state_reflects_the_occupancy_template(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    seen = _record_states(hass)
+    seen = record_states(hass)
     await setup_zone(hass, [room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})])
     statuses = [
         state.attributes["status"] for entity_id, state in seen if entity_id == KITCHEN_WEIGHT
@@ -1289,7 +1287,7 @@ async def test_first_state_reflects_the_occupancy_template(hass: HomeAssistant) 
 
 async def test_first_state_reflects_the_opening_template(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
-    seen = _record_states(hass)
+    seen = record_states(hass)
     await setup_zone(hass, [room("kitchen", **{CONF_OPENING_TEMPLATE: "{{ true }}"})])
     first = next(state for entity_id, state in seen if entity_id == KITCHEN_WEIGHT)
     assert first.attributes["open"] is True
@@ -1343,7 +1341,7 @@ async def test_temperature_readings_alone_do_not_rewrite_the_temperature_sensor(
     hass.states.async_set("sensor.alex_area", "Kitchen")
     await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
     await advance(hass, freezer, 3)  # the kitchen weight is still rising
-    seen = _record_states(hass)
+    seen = record_states(hass)
     for i in range(11):  # 55 s of readings; the output stays 20.0
         freezer.tick(timedelta(seconds=5))
         set_temperature(hass, "office", f"20.0{i % 2}")
@@ -1368,7 +1366,7 @@ async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
     hass.states.async_set("sensor.alex_area", "Kitchen")
     await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
     await advance(hass, freezer, 3)
-    seen = _record_states(hass)
+    seen = record_states(hass)
     freezer.tick(timedelta(seconds=30))
     hass.states.async_set("sensor.alex_area", "Office")
     await hass.async_block_till_done()
@@ -1480,60 +1478,6 @@ async def test_zone_saved_without_a_setting_loads_with_its_default(
 # Saved room state
 # ---------------------------------------------------------------------------
 
-SAVED = {
-    "weight": 0.8,
-    "target": 1.0,
-    "tau": 3.0,
-    "tau_name": "person_rise",
-    "status": "person",
-    "last_occupied_state": "person",
-    "last_known_temperature": 20.0,
-    "last_seen": 100.0,
-    "dropout_since": None,
-    "stale": False,
-    "last_update": 100.0,
-}
-
-
-def test_saved_state_records_its_version() -> None:
-    data = RoomExtraData(RoomState(weight=0.5), "°C").as_dict()
-    assert data["version"] == SAVED_VERSION == 1
-    assert data[CONF_TEMPERATURE_UNIT] == "°C"
-    assert saved_room_state(data) == RoomState(weight=0.5)
-
-
-def test_saved_state_ignores_unknown_fields_and_defaults_missing_ones() -> None:
-    """A field removed from or added to RoomState in a later version doesn't lose the room."""
-    data = {k: v for k, v in SAVED.items() if k not in ("tau_name", "last_seen")}
-    state = saved_room_state({**data, "retired_field": 1, "version": 99})
-    assert state is not None
-    assert (state.weight, state.status, state.tau_name, state.last_seen) == (
-        0.8,
-        Status.PERSON,
-        None,
-        None,
-    )
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"weight": "0.8"},  # wrong type
-        {"weight": math.nan},
-        {"weight": True},
-        {"status": "bogus"},
-        {"tau_name": "bogus"},
-        {"status": None},
-    ],
-)
-def test_unusable_saved_state_starts_the_room_afresh(change: dict[str, Any]) -> None:
-    assert saved_room_state({**SAVED, **change}) is None
-
-
-@pytest.mark.parametrize("missing", ["weight", "target", "tau", "status"])
-def test_saved_state_without_a_core_field_is_unusable(missing: str) -> None:
-    assert saved_room_state({k: v for k, v in SAVED.items() if k != missing}) is None
-
 
 async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssistant) -> None:
     data = {k: v for k, v in SAVED.items() if k != "last_seen"}
@@ -1551,18 +1495,6 @@ async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssis
 # ---------------------------------------------------------------------------
 
 
-async def _start_home_assistant(hass: HomeAssistant) -> None:
-    hass.set_state(CoreState.running)
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
-    await hass.async_block_till_done()
-
-
-async def _tick(hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float) -> None:
-    freezer.tick(timedelta(seconds=seconds))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-
 async def test_grace_lasts_two_minutes_and_held_time_is_not_counted(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -1570,17 +1502,17 @@ async def test_grace_lasts_two_minutes_and_held_time_is_not_counted(
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
-    await _start_home_assistant(hass)
+    await start_home_assistant(hass)
 
-    await _tick(hass, freezer, 119)
+    await advance(hass, freezer, seconds=119)
     assert weight(hass, KITCHEN_WEIGHT) == 0.0  # still held just before 2 minutes
-    await _tick(hass, freezer, 2)
+    await advance(hass, freezer, seconds=2)
     released = weight(hass, KITCHEN_WEIGHT)
     # Released at 2 minutes, but the held time isn't applied: at most the last
     # few seconds count, not the whole 2 minutes (which would give ~0.49).
     assert 0.0 < released < 0.02
 
-    await _tick(hass, freezer, 60)
+    await advance(hass, freezer, seconds=60)
     expected = 1 - (1 - released) * math.exp(-1 / 3)  # one minute at person rise 3
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(expected, abs=5e-5)
 
@@ -1592,16 +1524,16 @@ async def test_reload_during_grace_releases_the_hold(
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
-    await _start_home_assistant(hass)
-    await _tick(hass, freezer, 30)
+    await start_home_assistant(hass)
+    await advance(hass, freezer, seconds=30)
     assert weight(hass, KITCHEN_WEIGHT) == 0.0
 
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
-    await _tick(hass, freezer, 60)  # no grace after a reload
+    await advance(hass, freezer, seconds=60)  # no grace after a reload
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1 / 3), abs=0.01)
 
-    await _tick(hass, freezer, 60)  # past when the old zone's grace would have ended
+    await advance(hass, freezer, seconds=60)  # past when the old zone's grace would have ended
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-2 / 3), abs=0.01)
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
 
@@ -1616,11 +1548,11 @@ async def test_nothing_reaches_a_zone_after_it_is_unloaded(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    seen = _record_states(hass)
+    seen = record_states(hass)
     before = runtime.result
     set_temperature(hass, "kitchen", "25")
     hass.states.async_set("sensor.alex_area", "Office")
-    await _tick(hass, freezer, 180)
+    await advance(hass, freezer, seconds=180)
     assert [e for e, _ in seen if e.startswith("sensor.oort_")] == []
     assert runtime.result is before  # the runtime didn't recompute either
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
@@ -1655,12 +1587,13 @@ async def test_grace_end_writes_every_weight_sensor(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "22")
     await setup_zone(hass, [room("kitchen"), room("office")])
-    await _tick(hass, freezer, 30)  # so the grace end doesn't coincide with the minute timer
-    await _start_home_assistant(hass)
-    await _tick(hass, freezer, 100)  # 130 s after setup: past the first minute tick
+    # So the grace end doesn't coincide with the minute timer.
+    await advance(hass, freezer, seconds=30)
+    await start_home_assistant(hass)
+    await advance(hass, freezer, seconds=100)  # 130 s after setup: past the first minute tick
     reported = {e: hass.states.get(e).last_reported for e in (KITCHEN_WEIGHT, OFFICE_WEIGHT)}
 
-    await _tick(hass, freezer, 21)  # grace ends 120 s after start (150 s after setup)
+    await advance(hass, freezer, seconds=21)  # grace ends 120 s after start (150 s after setup)
     for entity_id, before in reported.items():
         assert hass.states.get(entity_id).last_reported > before, entity_id
 
