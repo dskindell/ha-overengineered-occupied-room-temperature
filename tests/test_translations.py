@@ -1,9 +1,10 @@
-"""Every field on every form has a label and a description."""
+"""Every field on every form is labelled and described, with the placeholders it uses."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from homeassistant.data_entry_flow import section
@@ -11,7 +12,11 @@ import pytest
 import voluptuous as vol
 
 from custom_components.overengineered_occupied_room_temperature import config_flow as flow
-from custom_components.overengineered_occupied_room_temperature.const import CONF_PERSON, CONF_ROOM
+from custom_components.overengineered_occupied_room_temperature.const import (
+    CONF_PERSON,
+    CONF_ROOM,
+    SETTINGS,
+)
 
 TRANSLATIONS = json.loads(
     (
@@ -75,3 +80,54 @@ def test_create_and_configure_texts_match() -> None:
     config, options = TRANSLATIONS["config"]["step"], TRANSLATIONS["options"]["step"]
     for step_id in MENU_STEPS:
         assert config[step_id] == options[step_id], step_id
+
+
+SETTING_STEPS = ("defaults", "room", "room_edit")
+PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def _placeholders(node: Any) -> set[str]:
+    if isinstance(node, dict):
+        return set().union(*map(_placeholders, node.values()))
+    return set(PLACEHOLDER.findall(node))
+
+
+@pytest.mark.parametrize("step_id", list(MENU_STEPS))
+def test_setting_placeholders_are_only_used_where_the_flow_supplies_them(step_id: str) -> None:
+    used = _placeholders(TRANSLATIONS["config"]["step"][step_id]) & flow.SETTING_PLACEHOLDERS.keys()
+    assert not used or step_id in SETTING_STEPS
+
+
+def test_setting_texts_use_known_placeholders() -> None:
+    used = _placeholders({step: TRANSLATIONS["config"]["step"][step] for step in SETTING_STEPS})
+    assert used - {"area"} <= flow.SETTING_PLACEHOLDERS.keys()
+
+
+def test_setting_errors_use_known_placeholders() -> None:
+    setting_errors = {name for s in SETTINGS for name in (s.too_small, s.too_large)}
+    for key, text in TRANSLATIONS["config"]["error"].items():
+        used = _placeholders(text)
+        assert used <= flow.SETTING_PLACEHOLDERS.keys(), key
+        assert not used or key in setting_errors, f"{key} is shown on forms without placeholders"
+
+
+def test_every_default_is_shown_from_the_settings_table() -> None:
+    assert not re.search(r"Default \d", json.dumps(TRANSLATIONS))
+    step = TRANSLATIONS["config"]["step"]["defaults"]
+    descriptions = {**step["data_description"], **step["sections"]["zone"]["data_description"]}
+    for setting in SETTINGS:
+        assert f"Default {{{setting.key}_default}}." in descriptions[setting.key]
+
+
+@pytest.mark.parametrize("limit", ["too_small", "too_large"])
+def test_settings_sharing_an_error_share_its_limit(limit: str) -> None:
+    """An error's text shows one setting's limit, so every setting using it has that limit."""
+    limits: dict[str, set[tuple[float, bool]]] = {}
+    for setting in SETTINGS:
+        value = (
+            (setting.minimum, setting.minimum_allowed)
+            if limit == "too_small"
+            else (setting.maximum, True)
+        )
+        limits.setdefault(getattr(setting, limit), set()).add(value)
+    assert all(len(values) == 1 for values in limits.values()), limits

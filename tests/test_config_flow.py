@@ -271,6 +271,22 @@ async def test_defaults_rejects_invalid_settings(
     assert flow.result["errors"] == {"base": error}
 
 
+async def test_defaults_form_shows_defaults_and_limits(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.menu(CONF_DEFAULTS)
+    placeholders = flow.result["description_placeholders"]
+    assert placeholders["tau_occupancy_rise_default"] == "10"
+    assert placeholders["w_base_minimum"] == "0.001"
+    assert placeholders["tau_person_rise_maximum"] == "1440"
+
+
+async def test_room_forms_show_the_setting_limits(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.menu(CONF_ROOMS)
+    await flow.submit({CONF_ROOM: CHOICE_ADD})
+    assert flow.result["description_placeholders"]["w_base_minimum"] == "0.001"
+
+
 async def test_defaults_form_rejects_negative_numbers(hass: HomeAssistant) -> None:
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)

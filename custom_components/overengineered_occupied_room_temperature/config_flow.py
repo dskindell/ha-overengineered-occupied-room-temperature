@@ -60,6 +60,12 @@ from .const import (
 )
 
 SETTINGS_BY_KEY = {setting.key: setting for setting in SETTINGS}
+# Defaults and limits for the texts of the forms that show or check settings.
+SETTING_PLACEHOLDERS = {
+    f"{setting.key}_{field}": f"{getattr(setting, field):g}"
+    for setting in SETTINGS
+    for field in ("default", "minimum", "maximum")
+}
 
 
 def _number(key: str) -> selector.NumberSelector:
@@ -291,6 +297,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
                 user_input or {**self._room_defaults, CONF_ZONE_SETTINGS: self._zone_settings},
             ),
             errors=errors,
+            description_placeholders=SETTING_PLACEHOLDERS,
         )
 
     # -- rooms ----------------------------------------------------------------
@@ -353,7 +360,10 @@ class ZoneMenu(ConfigEntryBaseFlow):
                 _room_schema(new=area_id is None), suggested
             ),
             errors=errors,
-            description_placeholders={"area": self._area_name(area_id)} if area_id else None,
+            description_placeholders={
+                **SETTING_PLACEHOLDERS,
+                **({"area": self._area_name(area_id)} if area_id else {}),
+            },
         )
 
     async def async_step_room_no_occupancy(
