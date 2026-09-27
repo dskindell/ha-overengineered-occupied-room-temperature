@@ -434,6 +434,12 @@ class TestAggregate:
         result = aggregate([sample(0.0, 20.0, None), sample(0.0, None, None)], 0.00001)
         assert result.temperature == pytest.approx(20.0)
 
+    def test_fallback_when_the_only_weighted_room_is_stale(self) -> None:
+        result = aggregate([sample(1.0, None, None), sample(0.0, 20.0)], 0.00001)
+        assert result.temperature == pytest.approx(20.0)
+        assert result.total_weight == 0.0
+        assert result.fallback
+
     def test_nothing_to_average_is_unavailable(self) -> None:
         assert aggregate([sample(0.5, None, None)], 0.00001) == Aggregate(
             temperature=None, total_weight=0.0, contributing_rooms=0, fallback=False

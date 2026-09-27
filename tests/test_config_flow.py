@@ -426,6 +426,12 @@ async def test_room_without_occupancy_source_shows_note(hass: HomeAssistant) -> 
     assert flow.step == CONF_ROOMS
 
 
+async def test_whitespace_only_template_is_not_an_occupancy_source(hass: HomeAssistant) -> None:
+    flow = await start_zone(hass)
+    await flow.add_room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: "   "})
+    assert flow.step == "room_no_occupancy"
+
+
 async def test_room_without_occupancy_source_no_note_when_people_exist(
     hass: HomeAssistant,
 ) -> None:

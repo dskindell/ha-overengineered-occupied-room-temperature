@@ -1659,3 +1659,103 @@ async def test_grace_end_writes_every_weight_sensor(
     await _tick(hass, freezer, 21)  # grace ends 120 s after start (150 s after setup)
     for entity_id, before in reported.items():
         assert hass.states.get(entity_id).last_reported > before, entity_id
+
+
+# ---------------------------------------------------------------------------
+# People, shared templates and units
+# ---------------------------------------------------------------------------
+
+
+async def test_one_template_text_used_by_two_rooms(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "22")
+    hass.states.async_set("input_text.mode", "off")
+    shared = "{{ states('input_text.mode') }}"
+    await setup_zone(
+        hass,
+        [
+            room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: shared}),
+            room("office", **{CONF_OPENING_TEMPLATE: shared}),
+        ],
+    )
+    hass.states.async_set("input_text.mode", "on")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["occupied"] is True
+    assert hass.states.get(OFFICE_WEIGHT).attributes["open"] is True
+
+    hass.states.async_set("input_text.mode", "maybe")
+    await hass.async_block_till_done()
+    [warning] = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING" and r.getMessage().startswith("OORT zone")
+    ]
+    assert "Kitchen occupancy template" in warning
+    assert "Office opening template" in warning
+
+
+async def test_one_of_two_people_leaving_keeps_the_room_person_occupied(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "22")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    hass.states.async_set("sensor.sam_area", "Kitchen")
+    await setup_zone(
+        hass,
+        [
+            room("kitchen"),
+            room("office"),
+            person("Alex", "sensor.alex_area"),
+            person("Sam", "sensor.sam_area"),
+        ],
+    )
+    await advance(hass, freezer, 1)
+    assert sorted(hass.states.get(KITCHEN_WEIGHT).attributes["people"]) == ["Alex", "Sam"]
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set("sensor.sam_area", "Office")
+    await hass.async_block_till_done()
+    kitchen = hass.states.get(KITCHEN_WEIGHT)
+    assert kitchen.attributes["status"] == "person"
+    assert kitchen.attributes["people"] == ["Alex"]  # written at once, not on the next minute
+    assert hass.states.get(OFFICE_WEIGHT).attributes["people"] == ["Sam"]
+
+
+@pytest.mark.parametrize(("value", "room_status"), [("Kitchen", "person"), (5, "unoccupied")])
+async def test_person_location_by_area_name_attribute(
+    hass: HomeAssistant, value: Any, room_status: str
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_phone", "home", {"room": value})
+    await setup_zone(
+        hass,
+        [room("kitchen"), person("Alex", "sensor.alex_phone", **{CONF_SOURCE_ATTRIBUTE: "room"})],
+    )
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == room_status
+
+
+async def test_kelvin_sensor_is_converted(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "293.15", unit="K")
+    await setup_zone(hass, [room("kitchen")])
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
+
+
+async def test_saved_kelvin_reading_is_converted_on_restore(hass: HomeAssistant) -> None:
+    now = dt_util.utcnow().timestamp()
+    restore_room_state(
+        hass,
+        unit="K",
+        weight=1.0,
+        target=1.0,
+        tau=3.0,
+        status=Status.PERSON,
+        last_known_temperature=293.15,
+        last_seen=now,
+        last_update=now,
+    )
+    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
+    await setup_zone(hass, [room("kitchen")])
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
