@@ -182,7 +182,7 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in the
 | Attribute | Meaning |
 |---|---|
 | `total_weight` | Sum of the weights of rooms that contributed a valid temperature (excludes the fallback term's weight), to 4 decimal places. Refreshed every minute and whenever the temperature, a room's status or its inputs change — not on every temperature reading. Not recorded in history. |
-| `contributing_rooms` | How many rooms contributed a valid temperature to the weighted average. |
+| `contributing_rooms` | How many rooms are steering the weighted average: they have a valid temperature and a weight that shows as more than 0 (at least 0.00005). An open room drops out of the count once its weight has faded; a new room joins once its weight starts rising. |
 | `fallback` | `true` when the fallback term's weight is more than the total weight of the rooms with a usable reading — see below. |
 
 ## Fallback and stale sensors

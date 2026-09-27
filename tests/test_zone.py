@@ -565,7 +565,7 @@ async def test_room_added_through_configure_appears_after_save(hass: HomeAssista
     office = hass.states.get(OFFICE_WEIGHT)
     assert office is not None
     assert office.attributes["status"] == "occupied"
-    assert hass.states.get(TEMPERATURE).attributes["contributing_rooms"] == 2
+    assert set(entry.runtime_data.rooms) == {"kitchen", "office"}
 
 
 async def test_failing_templates_count_as_not_open_and_not_occupied(
@@ -701,14 +701,36 @@ async def test_temperature_sensor_attributes(
     set_temperature(hass, "office", "24")
     await setup_zone(hass, [room("kitchen"), room("office")])
     attributes = hass.states.get(TEMPERATURE).attributes
-    assert attributes["contributing_rooms"] == 2
+    assert attributes["contributing_rooms"] == 0  # new rooms start at 0
     assert attributes["total_weight"] == 0.0
-    assert attributes["fallback"] is True  # new rooms start at 0, so the plain average leads
+    assert attributes["fallback"] is True  # so the plain average leads
 
     await advance(hass, freezer, 60)
     attributes = hass.states.get(TEMPERATURE).attributes
+    assert attributes["contributing_rooms"] == 2
     assert attributes["total_weight"] == round(2 * 0.001 * (1 - math.exp(-60 / 8)), 4)
     assert attributes["fallback"] is False
+
+
+async def test_an_open_room_stops_contributing_once_faded(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    hass.states.async_set("binary_sensor.office_window", "off")
+    occupied = {CONF_OCCUPANCY_TEMPLATE: "{{ true }}"}
+    window = {CONF_OPENING_SENSORS: ["binary_sensor.office_window"]}
+    await setup_zone(hass, [room("kitchen", **occupied), room("office", **occupied, **window)])
+    await advance(hass, freezer, 60)
+    assert hass.states.get(TEMPERATURE).attributes["contributing_rooms"] == 2
+
+    hass.states.async_set("binary_sensor.office_window", "on")
+    await advance(hass, freezer, 5)
+    assert hass.states.get(TEMPERATURE).attributes["contributing_rooms"] == 2  # still fading
+    await advance(hass, freezer, 10)
+    attributes = hass.states.get(TEMPERATURE).attributes
+    assert attributes["contributing_rooms"] == 1
+    assert attributes["total_weight"] == pytest.approx(weight(hass, KITCHEN_WEIGHT), abs=1e-4)
 
 
 async def test_area_name_matching_ignores_case_and_spaces(hass: HomeAssistant) -> None:

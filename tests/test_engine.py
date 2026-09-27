@@ -458,7 +458,17 @@ class TestAggregate:
         result = aggregate([sample(0.0, 20.0, None), sample(0.0, 22.0, None)], 0.00001)
         assert result.temperature == pytest.approx(21.0)
         assert result.fallback
+        assert result.contributing_rooms == 0
+
+    def test_rooms_count_as_contributing_once_their_weight_shows(self) -> None:
+        samples = [sample(0.00004, 20.0), sample(0.00005, 21.0), sample(0.5, 22.0)]
+        result = aggregate(samples, 0.00001)
         assert result.contributing_rooms == 2
+        assert result.total_weight == pytest.approx(0.50009)
+
+    def test_contributing_weight_is_where_the_shown_weight_leaves_0(self) -> None:
+        assert round(engine.CONTRIBUTING_WEIGHT, const.WEIGHT_DECIMALS) > 0
+        assert round(engine.CONTRIBUTING_WEIGHT * 0.99, const.WEIGHT_DECIMALS) == 0
 
     def test_fallback_prefers_closed_rooms(self) -> None:
         """An open room's reading is used only if no closed room has one."""

@@ -14,6 +14,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, fields
 from enum import StrEnum
 import math
+from typing import Final
+
+# A room counts as contributing once its weight shows as non-zero at 4 decimals;
+# a fading weight only approaches 0.
+CONTRIBUTING_WEIGHT: Final = 0.00005
 
 
 class Status(StrEnum):
@@ -275,6 +280,7 @@ class Aggregate:
     """None means the sensor is unavailable: nothing could be averaged."""
     total_weight: float
     contributing_rooms: int
+    """Rooms with a usable reading and a weight of at least ``CONTRIBUTING_WEIGHT``."""
     fallback: bool
     """The plain-average term outweighs all the rooms' weights together."""
 
@@ -337,7 +343,7 @@ def aggregate(samples: Iterable[RoomSample], epsilon: float) -> Aggregate:
     return Aggregate(
         temperature=numerator / denominator if denominator > 0 else None,
         total_weight=total_weight,
-        contributing_rooms=len(contributing),
+        contributing_rooms=sum(s.weight >= CONTRIBUTING_WEIGHT for s in contributing),
         fallback=bool(plain) and epsilon > total_weight,
     )
 
