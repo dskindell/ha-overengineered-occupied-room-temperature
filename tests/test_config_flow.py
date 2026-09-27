@@ -326,10 +326,10 @@ async def test_room_override_rejects_nan(hass: HomeAssistant) -> None:
     [
         ({"w_person": math.inf}, "value_not_finite"),
         ({"tau_person_rise": math.nan}, "value_not_finite"),
-        ({"tau_deactivate": 1440.5}, "tau_too_large"),
+        ({"tau_open": 1440.5}, "tau_too_large"),
         ({"w_base": 1.01}, "weight_too_large"),
         ({"stale_limit": 1440.5}, "stale_limit_too_large"),
-        ({"tau_deactivate": 1440, "w_base": 1, "stale_limit": 1440}, None),
+        ({"tau_open": 1440, "w_base": 1, "stale_limit": 1440}, None),
     ],
 )
 def test_settings_limits_also_checked_outside_the_form(
@@ -353,10 +353,10 @@ async def test_zone_wide_settings_have_their_own_section(hass: HomeAssistant) ->
     assert "stale_limit" not in result["options"][CONF_DEFAULTS]
 
 
-async def test_zero_deactivate_and_dropout_taus_allowed(hass: HomeAssistant) -> None:
+async def test_zero_open_and_dropout_taus_allowed(hass: HomeAssistant) -> None:
     flow = await start_zone(hass)
     await flow.menu(CONF_DEFAULTS)
-    await flow.submit(settings_input(tau_deactivate=0, tau_dropout=0))
+    await flow.submit(settings_input(tau_open=0, tau_dropout=0))
     assert flow.step == "menu"
 
 

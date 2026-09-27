@@ -284,7 +284,7 @@ async def test_opening_template_true_fades_room_out(
     assert kitchen.attributes["status"] == "open"
     assert kitchen.attributes["open"] is True
     await advance(hass, freezer, 1)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=5e-5)  # deactivate τ
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=5e-5)  # open τ
 
 
 async def test_any_opening_entity_on_makes_room_open(hass: HomeAssistant) -> None:
@@ -1397,10 +1397,10 @@ async def test_open_and_dropout_are_separate_statuses(hass: HomeAssistant) -> No
     await hass.async_block_till_done()
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert (kitchen.attributes["status"], kitchen.attributes["open"]) == ("open", True)
-    assert kitchen.attributes["tau_name"] == "deactivate"
+    assert kitchen.attributes["tau_name"] == "open"
 
 
-async def test_open_room_leaves_the_output_at_once_with_deactivate_tau_0(
+async def test_open_room_leaves_the_output_at_once_with_open_tau_0(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "10")
@@ -1414,7 +1414,7 @@ async def test_open_room_leaves_the_output_at_once_with_deactivate_tau_0(
             room("office"),
             person("Alex", "sensor.alex_area"),
         ],
-        tau_deactivate=0.0,
+        tau_open=0.0,
     )
     await advance(hass, freezer, 30)
     assert float(hass.states.get(TEMPERATURE).state) < 11

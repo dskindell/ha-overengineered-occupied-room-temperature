@@ -30,7 +30,7 @@ CONF_TAU_PERSON_RISE: Final = "tau_person_rise"
 CONF_TAU_PERSON_FALL: Final = "tau_person_fall"
 CONF_TAU_OCCUPANCY_RISE: Final = "tau_occupancy_rise"
 CONF_TAU_OCCUPANCY_FALL: Final = "tau_occupancy_fall"
-CONF_TAU_DEACTIVATE: Final = "tau_deactivate"
+CONF_TAU_OPEN: Final = "tau_open"
 CONF_TAU_DROPOUT: Final = "tau_dropout"
 CONF_W_PERSON: Final = "w_person"
 CONF_W_OCCUPIED: Final = "w_occupied"
@@ -120,7 +120,7 @@ SETTINGS: Final = (
     _tau(CONF_TAU_PERSON_FALL, 3.0, zero_allowed=False),
     _tau(CONF_TAU_OCCUPANCY_RISE, 10.0, zero_allowed=False),
     _tau(CONF_TAU_OCCUPANCY_FALL, 8.0, zero_allowed=False),
-    _tau(CONF_TAU_DEACTIVATE, 1.0, zero_allowed=True),  # 0 = instant
+    _tau(CONF_TAU_OPEN, 1.0, zero_allowed=True),  # 0 = instant
     _tau(CONF_TAU_DROPOUT, 5.0, zero_allowed=True),
     _weight(CONF_W_PERSON, 1.0),
     _weight(CONF_W_OCCUPIED, 0.5),

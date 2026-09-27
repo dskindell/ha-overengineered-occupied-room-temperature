@@ -110,14 +110,14 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. If the room is briefly open or dropped out during that fall (for example while its temperature sensor reconnects after a restart), it finishes the fall at the occupancy rise speed instead. | 3 |
 | Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). Also used when an empty room climbs back up to the unoccupied weight — for example after being open, or when it's new. | 10 |
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
-| Deactivate tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
+| Open tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
 | Sensor dropout tau | How fast a room fades out when its temperature sensor becomes unavailable. `0` = instantly. | 5 |
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
 | Unoccupied weight | Target weight otherwise. Must be at least 0.001. | 0.001 |
 | Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. In the **Zone** section; rooms can't override it. | 5 |
 
-Validation: person and occupancy taus must be greater than 0; deactivate and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1.
+Validation: person and occupancy taus must be greater than 0; open and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1.
 
 ### Rooms
 
@@ -170,7 +170,7 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `people` | List of the names of people currently present in this room. |
 | `target_weight` | The weight this room is currently moving toward. |
 | `tau` | The time constant (minutes) currently used to move toward `target_weight`. |
-| `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `deactivate` or `dropout` — so you can see both the direction and the reason. |
+| `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `open` or `dropout` — so you can see both the direction and the reason. |
 | `last_occupied_state` | The last status that was `person` or `occupied` (used to pick the correct fall tau); `null` if the room has never been occupied. |
 
 Each room's state is restored across a Home Assistant restart and when the zone is reloaded or reconfigured: its weight, status and last reading. The downtime itself isn't counted as elapsed time — the room resumes at the weight it had before rather than jumping as if time had passed. The saved reading is reused only if it's newer than the stale limit.
@@ -189,7 +189,7 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in the
 
 Every room's temperature sensor is read continuously, whether or not the room is open. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature (including `nan` or `inf`), the room (status `dropout`) keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit** (counted from when it was last seen working), that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
 
-The overall `Temperature` sensor also has a small **fallback term**: a plain average of the rooms' current valid readings — rooms that aren't open first; open rooms' readings are used only if no closed room has a current or recent reading, with a fixed weight equal to 1% of your smallest room's unoccupied weight. This term is normally negligible next to any room with real weight, but it keeps the sensor producing a sensible number — rather than becoming unavailable — while every room is fading toward zero (for example, right after startup, or if every room is deactivated at once). If every temperature sensor is down at once, the fallback uses the rooms' last readings instead, until they go stale. The `fallback` attribute turns `true` when this term's weight exceeds the sum of every room's own weight, which is your cue that the temperature is currently closer to a whole-home average than to an occupancy-weighted one.
+The overall `Temperature` sensor also has a small **fallback term**: a plain average of the rooms' current valid readings — rooms that aren't open first; open rooms' readings are used only if no closed room has a current or recent reading, with a fixed weight equal to 1% of your smallest room's unoccupied weight. This term is normally negligible next to any room with real weight, but it keeps the sensor producing a sensible number — rather than becoming unavailable — while every room is fading toward zero (for example, right after startup, or if every room is open at once). If every temperature sensor is down at once, the fallback uses the rooms' last readings instead, until they go stale. The `fallback` attribute turns `true` when this term's weight exceeds the sum of every room's own weight, which is your cue that the temperature is currently closer to a whole-home average than to an occupancy-weighted one.
 
 Last readings are saved across restarts, so a normal reboot doesn't make the output jump while sensors reconnect. After a longer downtime, readings older than the stale limit aren't reused; each room joins in again as soon as its sensor reports.
 

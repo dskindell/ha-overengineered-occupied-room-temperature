@@ -106,9 +106,7 @@ class TestStatusAndTarget:
 
 
 class TestSelectTau:
-    taus = Taus(
-        person_rise=1, person_fall=2, occupancy_rise=3, occupancy_fall=4, deactivate=5, dropout=6
-    )
+    taus = Taus(person_rise=1, person_fall=2, occupancy_rise=3, occupancy_fall=4, open=5, dropout=6)
 
     def test_rises(self) -> None:
         assert select_tau(Status.PERSON, None, self.taus) == 1
@@ -119,7 +117,7 @@ class TestSelectTau:
         assert select_tau(Status.UNOCCUPIED, Status.OCCUPIED, self.taus) == 4
         assert select_tau(Status.UNOCCUPIED, None, self.taus) == 4
 
-    def test_open_uses_deactivate_and_dropout_uses_dropout(self) -> None:
+    def test_open_and_dropout_use_their_own_taus(self) -> None:
         assert select_tau(Status.OPEN, None, self.taus) == 5
         assert select_tau(Status.DROPOUT, None, self.taus) == 6
 
@@ -129,7 +127,7 @@ class TestSelectTau:
             (Status.OCCUPIED, None, TauName.OCCUPANCY_RISE),
             (Status.UNOCCUPIED, Status.PERSON, TauName.PERSON_FALL),
             (Status.UNOCCUPIED, Status.OCCUPIED, TauName.OCCUPANCY_FALL),
-            (Status.OPEN, None, TauName.DEACTIVATE),
+            (Status.OPEN, None, TauName.OPEN),
             (Status.DROPOUT, None, TauName.DROPOUT),
         ]
         for status, last, name in cases:
@@ -140,9 +138,7 @@ class TestSelectTau:
 class TestPersonLeavesOccupiedRoom:
     """Leaving ``person`` for ``occupied`` uses person fall, not occupancy rise."""
 
-    taus = Taus(
-        person_rise=1, person_fall=2, occupancy_rise=3, occupancy_fall=4, deactivate=5, dropout=6
-    )
+    taus = Taus(person_rise=1, person_fall=2, occupancy_rise=3, occupancy_fall=4, open=5, dropout=6)
 
     def test_select_tau_uses_person_fall_when_the_person_leaves(self) -> None:
         name = select_tau_name(Status.OCCUPIED, Status.OCCUPIED, previous_status=Status.PERSON)
@@ -217,12 +213,12 @@ class TestStepRoom:
         assert state.last_occupied_state is Status.PERSON
         assert state.tau == 2
 
-    def test_open_room_fades_with_deactivate_tau(self) -> None:
+    def test_open_room_fades_with_the_open_tau(self) -> None:
         state = RoomState(weight=1.0, target=1.0, tau=3.0, status=Status.PERSON, last_update=0.0)
         state = step_room(state, inputs(open=True, person=True), CONFIG, 0.0)
         assert state.status is Status.OPEN
         state = step_room(state, inputs(open=True, person=True), CONFIG, MINUTE)
-        assert state.weight == pytest.approx(math.exp(-1))  # deactivate tau = 1 min
+        assert state.weight == pytest.approx(math.exp(-1))  # open tau = 1 min
 
     def test_hold_freezes_weight_but_tracks_status(self) -> None:
         state = RoomState(weight=0.5, target=0.5, tau=10.0, last_update=0.0)
@@ -331,11 +327,11 @@ class TestZeroTauIsInstant:
         last_known_temperature=70.0,
         last_seen=0.0,
     )
-    INSTANT = replace(CONFIG, taus=replace(CONFIG.taus, deactivate=0.0, dropout=0.0))
+    INSTANT = replace(CONFIG, taus=replace(CONFIG.taus, open=0.0, dropout=0.0))
 
     def test_opened_room_drops_to_zero_at_once(self) -> None:
         state = step_room(self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0)
-        assert (state.weight, state.target, state.tau_name) == (0.0, 0.0, TauName.DEACTIVATE)
+        assert (state.weight, state.target, state.tau_name) == (0.0, 0.0, TauName.OPEN)
 
     def test_dropped_out_sensor_drops_to_zero_at_once(self) -> None:
         state = step_room(self.PERSON, inputs(person=True, temperature=None), self.INSTANT, 0.0)
@@ -384,7 +380,7 @@ class TestAggregate:
         eps = fallback_epsilon([0.001])
         readings = []
         for minutes in range(31):
-            fade = math.exp(-minutes)  # deactivate tau = 1 min
+            fade = math.exp(-minutes)  # open tau = 1 min
             result = aggregate(
                 [sample(1.0 * fade, 64.0, closed=False), sample(0.001 * fade, 74.0, closed=False)],
                 eps,
@@ -452,7 +448,7 @@ class TestRoomConfig:
         "tau_person_fall": 3.0,
         "tau_occupancy_rise": 10.0,
         "tau_occupancy_fall": 8.0,
-        "tau_deactivate": 1.0,
+        "tau_open": 1.0,
         "tau_dropout": 5.0,
         "w_person": 1.0,
         "w_occupied": 0.5,

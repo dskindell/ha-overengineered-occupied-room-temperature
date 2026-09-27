@@ -39,7 +39,7 @@ class TauName(StrEnum):
     PERSON_FALL = "person_fall"
     OCCUPANCY_RISE = "occupancy_rise"
     OCCUPANCY_FALL = "occupancy_fall"
-    DEACTIVATE = "deactivate"
+    OPEN = "open"
     DROPOUT = "dropout"
 
 
@@ -55,7 +55,7 @@ class Taus:
     person_fall: float
     occupancy_rise: float
     occupancy_fall: float
-    deactivate: float
+    open: float
     dropout: float
 
 
@@ -187,7 +187,7 @@ def select_tau_name(
         if last_occupied_state is Status.PERSON:
             return TauName.PERSON_FALL
         return TauName.OCCUPANCY_FALL
-    return TauName.DEACTIVATE if status is Status.OPEN else TauName.DROPOUT
+    return TauName.OPEN if status is Status.OPEN else TauName.DROPOUT
 
 
 def step_room(
