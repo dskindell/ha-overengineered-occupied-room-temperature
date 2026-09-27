@@ -71,14 +71,13 @@ SETTING_PLACEHOLDERS = {
 def _number(key: str) -> selector.NumberSelector:
     # min=0 rather than the setting's minimum, so a too-small unoccupied weight
     # gets its explanatory error from validate_settings.
-    return selector.NumberSelector(
-        selector.NumberSelectorConfig(
-            min=0,
-            max=SETTINGS_BY_KEY[key].maximum,
-            step="any",
-            mode=selector.NumberSelectorMode.BOX,
-        )
+    setting = SETTINGS_BY_KEY[key]
+    config = selector.NumberSelectorConfig(
+        min=0, max=setting.maximum, step="any", mode=selector.NumberSelectorMode.BOX
     )
+    if setting.unit is not None:
+        config["unit_of_measurement"] = setting.unit
+    return selector.NumberSelector(config)
 
 
 def validate_settings(values: Mapping[str, Any]) -> str | None:

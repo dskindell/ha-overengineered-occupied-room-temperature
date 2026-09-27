@@ -131,3 +131,15 @@ def test_settings_sharing_an_error_share_its_limit(limit: str) -> None:
         )
         limits.setdefault(getattr(setting, limit), set()).add(value)
     assert all(len(values) == 1 for values in limits.values()), limits
+
+
+def test_minute_settings_show_their_unit() -> None:
+    _, sections = _fields(flow.DEFAULTS_SCHEMA)
+    units = {
+        str(key): value.config.get("unit_of_measurement")
+        for schema in (flow.DEFAULTS_SCHEMA, *sections.values())
+        for key, value in schema.schema.items()
+        if not isinstance(value, section)
+    }
+    minutes = [s.key for s in SETTINGS if s.key.startswith(("tau_", "stale_"))]
+    assert units == {s.key: "min" if s.key in minutes else None for s in SETTINGS}

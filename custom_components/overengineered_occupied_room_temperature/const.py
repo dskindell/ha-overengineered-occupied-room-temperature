@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from homeassistant.const import UnitOfTime
+
 from .engine import RoomConfig, room_config
 
 DOMAIN: Final = "overengineered_occupied_room_temperature"
@@ -92,6 +94,8 @@ class Setting:
     too_small: str
     """Error key for a value below ``minimum`` (or equal to it, if not allowed)."""
     too_large: str
+    unit: str | None = None
+    """Shown next to the form field."""
     minimum_allowed: bool = True
     """Whether ``minimum`` itself is valid (False: must be greater)."""
     per_room: bool = True
@@ -107,6 +111,7 @@ def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
         maximum=MAX_TAU,
         too_small="tau_negative" if zero_allowed else "tau_not_positive",
         too_large="tau_too_large",
+        unit=UnitOfTime.MINUTES,
         minimum_allowed=zero_allowed,
     )
 
@@ -141,6 +146,7 @@ SETTINGS: Final = (
         maximum=MAX_STALE_LIMIT,
         too_small="stale_limit_not_positive",
         too_large="stale_limit_too_large",
+        unit=UnitOfTime.MINUTES,
         minimum_allowed=False,
         per_room=False,
     ),
