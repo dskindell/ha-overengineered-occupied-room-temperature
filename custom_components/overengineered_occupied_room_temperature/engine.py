@@ -87,7 +87,8 @@ class RoomInputs:
 
 @dataclass(frozen=True, slots=True)
 class RoomState:
-    """Everything carried from one update to the next (and restored after a restart)."""
+    """Everything carried from one update to the next (and restored after a restart),
+    and the inputs of the update that produced it."""
 
     weight: float = 0.0
     target: float = 0.0
@@ -112,6 +113,8 @@ class RoomState:
     last_update: float | None = None
     """When the room was last stepped; None after a restore, so downtime isn't
     applied as elapsed time."""
+    inputs: RoomInputs | None = None
+    """The inputs this state was stepped with; None before the first update. Not saved."""
 
     @property
     def usable_temperature(self) -> float | None:
@@ -253,6 +256,7 @@ def step_room(
         dropout_since=dropout_since,
         stale=stale,
         last_update=now,
+        inputs=inputs,
     )
 
 
@@ -281,9 +285,20 @@ class RoomSample:
     usable: float | None
     """Last known reading unless it has gone stale (``RoomState.usable_temperature``)."""
     current: float | None
-    """This update's reading, or None if the sensor is unusable (``RoomInputs.temperature``)."""
+    """This update's reading, or None if the sensor is unusable."""
     closed: bool
-    """Not open (``not RoomInputs.open``); preferred for the plain average."""
+    """Not open; preferred for the plain average."""
+
+    @classmethod
+    def of(cls, state: RoomState) -> RoomSample:
+        """A stepped room's sample."""
+        inputs = state.inputs
+        return cls(
+            weight=state.weight,
+            usable=state.usable_temperature,
+            current=inputs.temperature if inputs else None,
+            closed=not inputs.open if inputs else True,
+        )
 
 
 def aggregate(samples: Iterable[RoomSample], epsilon: float) -> Aggregate:
@@ -367,16 +382,5 @@ def step_zone(
     epsilon = (
         fallback_epsilon(config.weights.base for _, _, config in rooms.values()) if rooms else 0.0
     )
-    result = aggregate(
-        (
-            RoomSample(
-                weight=states[key].weight,
-                usable=states[key].usable_temperature,
-                current=inputs.temperature,
-                closed=not inputs.open,
-            )
-            for key, (_, inputs, _) in rooms.items()
-        ),
-        epsilon,
-    )
+    result = aggregate(map(RoomSample.of, states.values()), epsilon)
     return ZoneStep(states, result)

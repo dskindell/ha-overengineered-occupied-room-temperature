@@ -24,7 +24,9 @@ KEY_UNIT: Final = "temperature_unit"
 # Without these a saved state means nothing; the room then starts afresh.
 _REQUIRED: Final = ("weight", "target", "tau", "status")
 _NUMBERS: Final = ("weight", "target", "tau")
-_FIELDS: Final = frozenset(field.name for field in fields(RoomState))
+# Inputs are replaced by the first update after a restore, so they aren't saved.
+_UNSAVED: Final = frozenset({"inputs"})
+_FIELDS: Final = frozenset(field.name for field in fields(RoomState)) - _UNSAVED
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +37,9 @@ class RoomExtraData(ExtraStoredData):
     temperature_unit: str
 
     def as_dict(self) -> dict[str, Any]:
+        saved = {key: value for key, value in asdict(self.state).items() if key in _FIELDS}
         return {
-            **asdict(self.state),
+            **saved,
             KEY_UNIT: self.temperature_unit,
             KEY_VERSION: SAVED_VERSION,
         }

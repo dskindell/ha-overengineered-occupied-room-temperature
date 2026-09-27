@@ -8,7 +8,11 @@ from typing import Any
 import pytest
 
 from custom_components.overengineered_occupied_room_temperature.const import CONF_TEMPERATURE_UNIT
-from custom_components.overengineered_occupied_room_temperature.engine import RoomState, Status
+from custom_components.overengineered_occupied_room_temperature.engine import (
+    RoomInputs,
+    RoomState,
+    Status,
+)
 from custom_components.overengineered_occupied_room_temperature.storage import (
     SAVED_VERSION,
     RoomExtraData,
@@ -22,6 +26,13 @@ def test_saved_state_records_its_version() -> None:
     assert data["version"] == SAVED_VERSION == 1
     assert data[CONF_TEMPERATURE_UNIT] == "°C"
     assert saved_room_state(data) == RoomState(weight=0.5)
+
+
+def test_inputs_are_not_saved_or_restored() -> None:
+    state = RoomState(weight=0.5, inputs=RoomInputs(False, False, True, 20.0))
+    data = RoomExtraData(state, "°C").as_dict()
+    assert "inputs" not in data
+    assert saved_room_state({**data, "inputs": {"open": True}}) == RoomState(weight=0.5)
 
 
 def test_saved_state_ignores_unknown_fields_and_defaults_missing_ones() -> None:

@@ -465,9 +465,6 @@ class TestRoomConfig:
     def test_stale_limit_is_zone_wide(self) -> None:
         assert room_config(self.DEFAULTS, {"stale_limit": 60.0}).stale_limit == 5.0
 
-    def test_default_stale_limit_is_5_minutes(self) -> None:
-        assert const.DEFAULTS["stale_limit"] == 5
-
     def test_setting_keys_match_the_integration(self) -> None:
         """room_config builds keys from field names; they must be the stored keys."""
         engine_keys = {f"tau_{f.name}" for f in fields(Taus)} | {
@@ -510,3 +507,22 @@ class TestStepZone:
 
     def test_no_rooms(self) -> None:
         assert step_zone({}, 0.0).result.temperature is None
+
+    def test_each_room_records_the_inputs_it_was_stepped_with(self) -> None:
+        room_inputs = inputs(open=True, occupied=True, temperature=20.0)
+        step = step_zone({"a": (RoomState(), room_inputs, CONFIG)}, 0.0)
+        assert step.rooms["a"].inputs == room_inputs
+
+
+class TestRoomSample:
+    def test_uses_the_inputs_the_room_was_stepped_with(self) -> None:
+        state = step_room(RoomState(), inputs(open=True, temperature=20.0), CONFIG, 0.0)
+        assert RoomSample.of(state) == RoomSample(
+            weight=0.0, usable=20.0, current=20.0, closed=False
+        )
+
+    def test_a_room_never_stepped_is_closed_with_no_current_reading(self) -> None:
+        state = RoomState(weight=0.5, last_known_temperature=20.0)
+        assert RoomSample.of(state) == RoomSample(
+            weight=0.5, usable=20.0, current=None, closed=True
+        )

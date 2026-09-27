@@ -125,7 +125,6 @@ class Room:
     has_occupancy_source: bool
     config: RoomConfig
     state: RoomState = field(default_factory=RoomState)
-    inputs: RoomInputs | None = None
     people: list[str] = field(default_factory=list)
     write_pending: bool = True
     """Whether the room's weight sensor should write its state after this update."""
@@ -158,7 +157,7 @@ def repairs_issue_id(entry: ConfigEntry) -> str:
 
 def _signature(room: Room) -> tuple[Any, ...]:
     """What a room's weight sensor shows apart from the weight itself."""
-    state, inputs = room.state, room.inputs
+    state, inputs = room.state, room.state.inputs
     return (
         state.status,
         state.target,
@@ -511,8 +510,7 @@ class ZoneRuntime:
         for area_id, room in self.rooms.items():
             before[area_id] = _signature(room)
             room.people = people_by_area.get(area_id, [])
-            room.inputs = self._room_inputs(room)
-            zone[area_id] = (room.state, room.inputs, room.config)
+            zone[area_id] = (room.state, self._room_inputs(room), room.config)
 
         step = step_zone(zone, dt_util.utcnow().timestamp(), hold=self._hold)
         self.result = step.result
