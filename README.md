@@ -239,10 +239,17 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 
 This runs the tests for the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
 
-Lint with [ruff](https://docs.astral.sh/ruff/):
+Lint and format with [ruff](https://docs.astral.sh/ruff/) (settings in `pyproject.toml`):
 
 ```sh
-uvx ruff check --select F,E9,B custom_components tests
+uvx ruff check custom_components tests scripts
+uvx ruff format custom_components tests scripts
+```
+
+To run the same checks as CI before each commit — including the commit-message format ([Conventional Commits](https://www.conventionalcommits.org/)) — install the [pre-commit](https://pre-commit.com/) hooks once:
+
+```sh
+uvx pre-commit install
 ```
 
 ## License

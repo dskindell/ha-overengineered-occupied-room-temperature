@@ -57,3 +57,15 @@ def test_reference_scan_reports_file_and_line(tmp_path: Path) -> None:
     (tmp_path / "tests" / "test_x.py").write_text("a = 1\nb = 2  # see (D12)\n")
     (tmp_path / "README.md").write_text("fine\n")
     assert rules.reference_problems(tmp_path) == ["tests/test_x.py:2: '(D12)'"]
+
+
+def test_message_file_ignores_git_comment_lines(tmp_path: Path) -> None:
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("# Please enter the commit message\nfeat: add x\n\n# On branch main\n")
+    assert rules.message_file_problems(message) == []
+
+
+def test_message_file_rejects_a_bad_subject(tmp_path: Path) -> None:
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("Added some stuff\n")
+    assert rules.message_file_problems(message)

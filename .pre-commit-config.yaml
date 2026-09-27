@@ -1,0 +1,25 @@
+# Same checks as CI, run locally. One-time setup: uvx pre-commit install
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  - repo: local
+    hooks:
+      - id: design-references
+        name: no design references in the code
+        entry: python3 scripts/check_rules.py references
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: commit-message
+        name: Conventional Commit message
+        entry: python3 scripts/check_rules.py message-file
+        language: system
+        stages: [commit-msg]

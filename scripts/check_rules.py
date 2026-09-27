@@ -1,7 +1,8 @@
 """Check the repository's conventions.
 
-python scripts/check_rules.py references       # no design-document references
-python scripts/check_rules.py commits <range>  # Conventional Commit messages
+python scripts/check_rules.py references           # no design-document references
+python scripts/check_rules.py commits <range>      # Conventional Commit messages
+python scripts/check_rules.py message-file <path>  # one message (commit-msg hook)
 """
 
 from __future__ import annotations
@@ -59,6 +60,11 @@ def message_problems(message: str) -> list[str]:
     return problems
 
 
+def message_file_problems(path: Path) -> list[str]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return message_problems("\n".join(line for line in lines if not line.startswith("#")).strip())
+
+
 def commit_problems(revisions: str) -> list[str]:
     log = subprocess.run(
         ["git", "log", "--format=%h%x00%B%x01", revisions],
@@ -77,6 +83,9 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["references"]:
         problems = reference_problems(Path.cwd())
         hint = "Design references belong on the BookStack pages, not in the repository."
+    elif argv[:1] == ["message-file"] and len(argv) == 2:
+        problems = message_file_problems(Path(argv[1]))
+        hint = f"Allowed types: {', '.join(TYPES)}. No Co-Authored-By lines."
     elif argv[:1] == ["commits"] and len(argv) == 2:
         problems = commit_problems(argv[1])
         hint = f"Allowed types: {', '.join(TYPES)}. No Co-Authored-By lines."
