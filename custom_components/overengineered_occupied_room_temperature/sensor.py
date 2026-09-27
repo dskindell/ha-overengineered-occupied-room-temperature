@@ -78,7 +78,8 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
     def __init__(self, runtime: ZoneRuntime, room: Room, device: DeviceInfo) -> None:
         super().__init__(runtime, device)
         self._room = room
-        self._attr_name = f"{room.name} weight"
+        self._attr_translation_key = "room_weight"
+        self._attr_translation_placeholders = {"room": room.name}
         self._attr_unique_id = room_unique_id(runtime.entry, room.area_id)
 
     @property
@@ -102,7 +103,6 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
 class WeightedTemperatureSensor(_OortSensor):
     """The zone's occupancy-weighted temperature."""
 
-    _attr_name = "Temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_suggested_display_precision = TEMPERATURE_DECIMALS
     # Changes on almost every update; kept on the entity but out of history.

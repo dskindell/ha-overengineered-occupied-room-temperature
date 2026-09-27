@@ -461,5 +461,12 @@
       "title": "Some OORT rooms can never count as occupied",
       "description": "In the OORT zone \"{zone}\", these rooms have no occupancy sensors or occupancy template, and the zone has no people: {rooms}. They will always use the unoccupied weight. Open the zone's Configure menu to add people, or occupancy sensors or a template to these rooms."
     }
+  },
+  "entity": {
+    "sensor": {
+      "room_weight": {
+        "name": "{room} weight"
+      }
+    }
   }
 }

@@ -197,6 +197,8 @@ async def test_creates_device_and_entities(hass: HomeAssistant) -> None:
     assert temperature.attributes["unit_of_measurement"] == "°C"
     assert temperature.attributes["state_class"] == "measurement"
     assert hass.states.get(KITCHEN_WEIGHT).attributes["state_class"] == "measurement"
+    assert temperature.attributes["friendly_name"] == "OORT Home Temperature"
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["friendly_name"] == "OORT Home Kitchen weight"
 
 
 async def test_person_pulls_the_temperature_toward_their_room(
