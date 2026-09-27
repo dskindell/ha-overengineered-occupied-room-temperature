@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 DOMAIN: Final = "overengineered_occupied_room_temperature"
 
@@ -139,6 +139,11 @@ SETTINGS: Final = (
 DEFAULTS: Final[dict[str, float]] = {setting.key: setting.default for setting in SETTINGS}
 ROOM_SETTINGS: Final = tuple(setting.key for setting in SETTINGS if setting.per_room)
 ZONE_SETTINGS: Final = tuple(setting.key for setting in SETTINGS if not setting.per_room)
+
+
+def has_occupancy_source(room: Mapping[str, Any]) -> bool:
+    """Whether a room's stored data gives any way to detect that it is occupied."""
+    return bool(room.get(CONF_OCCUPANCY_SENSORS) or room.get(CONF_OCCUPANCY_TEMPLATE))
 
 
 def with_defaults(stored: Mapping[str, float], keys: tuple[str, ...]) -> dict[str, float]:

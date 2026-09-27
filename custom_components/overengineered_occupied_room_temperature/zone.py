@@ -62,6 +62,7 @@ from .const import (
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
     ZONE_SETTINGS,
+    has_occupancy_source,
     with_defaults,
 )
 from .engine import (
@@ -96,10 +97,12 @@ def _render(template: Template) -> Any:
         return err
 
 
-_MISSING = (None, "", STATE_UNKNOWN, STATE_UNAVAILABLE)
+def _is_missing(value: Any) -> bool:
+    """No value: absent, blank, ``unknown`` or ``unavailable``."""
+    return value is None or str(value).strip().lower() in ("", STATE_UNKNOWN, STATE_UNAVAILABLE)
 
 
-class _Result(StrEnum):
+class _ResultKind(StrEnum):
     """What kind of result a template gave, for logging each change once."""
 
     OK = "ok"
@@ -114,11 +117,12 @@ class Room:
     area_id: str
     name: str
     temperature_sensors: list[str]
-    """One for now; stored as a list for several sensors per room later."""
+    """Only the first is read."""
     occupancy_sensors: list[str]
     occupancy_template: Template | None
     opening_sensors: list[str]
     opening_template: Template | None
+    has_occupancy_source: bool
     config: RoomConfig
     state: RoomState = field(default_factory=RoomState)
     inputs: RoomInputs | None = None
@@ -147,7 +151,7 @@ def temperature_unique_id(entry: ConfigEntry) -> str:
     return f"{entry.entry_id}_temperature"
 
 
-def issue_id(entry: ConfigEntry) -> str:
+def repairs_issue_id(entry: ConfigEntry) -> str:
     """ID of the zone's missing-occupancy Repairs issue."""
     return f"no_occupancy_source_{entry.entry_id}"
 
@@ -201,6 +205,7 @@ class ZoneRuntime:
                 occupancy_template=self._template(data.get(CONF_OCCUPANCY_TEMPLATE)),
                 opening_sensors=list(data.get(CONF_OPENING_SENSORS, [])),
                 opening_template=self._template(data.get(CONF_OPENING_TEMPLATE)),
+                has_occupancy_source=has_occupancy_source(data),
                 config=room_config(defaults, data.get(CONF_OVERRIDES, {})),
             )
         self.people: list[Person] = [
@@ -213,13 +218,10 @@ class ZoneRuntime:
             for data in options[CONF_PEOPLE].values()
         ]
         self.result = Aggregate(None, 0.0, 0, False)
-        # True when this update came from the timer/startup/grace end, or any room's
-        # status or inputs changed: the Temperature sensor then refreshes its
-        # attributes too.
-        self.write_all = True
+        self.any_room_written = True
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
-        self._template_problems: dict[Template, _Result] = {}
+        self._template_result_kinds: dict[Template, _ResultKind] = {}
         # Grace period only while Home Assistant itself is starting.
         self._hold = hass.state is not CoreState.running
         self._listeners: list[Callable[[], None]] = []
@@ -229,25 +231,21 @@ class ZoneRuntime:
 
     # -- restore and listeners ------------------------------------------------
 
-    @callback
-    def restore_room(self, area_id: str, state: RoomState, unit: str | None = None) -> None:
-        """Seed a room with state saved before a restart.
+    def _in_zone_unit(self, value: float, unit: str | None) -> float | None:
+        """``value`` in the zone's unit (None: already in it); None if the unit isn't a
+        temperature unit or the result isn't finite (Home Assistant won't write it)."""
+        if unit is not None and unit != self.unit:
+            if unit not in TemperatureConverter.VALID_UNITS:
+                return None
+            value = TemperatureConverter.convert(value, unit, self.unit)
+        return value if math.isfinite(value) else None
 
-        The downtime is not applied as elapsed time, so ``last_update`` is cleared.
-        A saved reading in another unit is converted to this zone's unit.
-        """
-        if (room := self.rooms.get(area_id)) is None:
-            return
+    @callback
+    def _restore_room(self, room: Room, state: RoomState, unit: str | None) -> None:
+        """Seed a room with saved state; the downtime isn't applied as elapsed time."""
         temperature = state.last_known_temperature
-        if (
-            temperature is not None
-            and unit is not None
-            and unit != self.unit
-            and unit in TemperatureConverter.VALID_UNITS
-        ):
-            temperature = TemperatureConverter.convert(temperature, unit, self.unit)
-        if temperature is not None and not math.isfinite(temperature):
-            temperature = None
+        if temperature is not None:
+            temperature = self._in_zone_unit(temperature, unit)
         room.state = replace(state, last_update=None, last_known_temperature=temperature)
 
     @callback
@@ -269,7 +267,7 @@ class ZoneRuntime:
         """
         registry = er.async_get(self.hass)
         saved = restore_state.async_get(self.hass).last_states
-        for area_id in self.rooms:
+        for area_id, room in self.rooms.items():
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, room_unique_id(self.entry, area_id)
             )
@@ -278,7 +276,7 @@ class ZoneRuntime:
                 continue
             data = stored.extra_data.as_dict()
             if (state := saved_room_state(data)) is not None:
-                self.restore_room(area_id, state, saved_unit(data))
+                self._restore_room(room, state, saved_unit(data))
         # The template tracker only starts in async_start, so render each template
         # once now; otherwise the first result would count every template as false.
         for room in self.rooms.values():
@@ -347,12 +345,8 @@ class ZoneRuntime:
     @callback
     def _async_update_repairs(self) -> None:
         """Warn when rooms can never be occupied: no people and no occupancy source."""
-        repairs_id = issue_id(self.entry)
-        rooms = sorted(
-            room.name
-            for room in self.rooms.values()
-            if not room.occupancy_sensors and room.occupancy_template is None
-        )
+        repairs_id = repairs_issue_id(self.entry)
+        rooms = sorted(room.name for room in self.rooms.values() if not room.has_occupancy_source)
         if rooms and not self.people:
             ir.async_create_issue(
                 self.hass,
@@ -370,7 +364,6 @@ class ZoneRuntime:
 
     @callback
     def _async_on_state(self, _event: Event[EventStateChangedData]) -> None:
-        # Sensors are rewritten only when something they show changes.
         self.async_update(write_everything=False)
 
     @callback
@@ -389,33 +382,28 @@ class ZoneRuntime:
     def _log_template_result(self, template: Template, result: Any) -> None:
         """Log a template result that can't count as true or false.
 
-        Logged when the *kind* of result changes (fine → error → unrecognised),
-        not on every new value, so a template returning a stream of odd values
-        warns once. ``unavailable``/``unknown``/blank are expected while a source
-        entity is down; they count as fine and aren't logged.
+        Logged when the *kind* of result changes (ok → error → unrecognised), not on
+        every new value, so a template returning a stream of odd values warns once.
+        A missing result is expected while a source entity is down; it counts as ok.
         """
         if isinstance(result, TemplateError):
-            kind = _Result.ERROR
-        elif (
-            result is not None
-            and str(result).strip().lower() not in ("", STATE_UNAVAILABLE, STATE_UNKNOWN)
-            and not _is_boolean(result)
-        ):
-            kind = _Result.UNRECOGNISED
+            kind = _ResultKind.ERROR
+        elif not _is_missing(result) and not _is_boolean(result):
+            kind = _ResultKind.UNRECOGNISED
         else:
-            kind = _Result.OK
-        if self._template_problems.get(template, _Result.OK) is kind:
+            kind = _ResultKind.OK
+        if self._template_result_kinds.get(template, _ResultKind.OK) is kind:
             return
-        self._template_problems[template] = kind
+        self._template_result_kinds[template] = kind
         labels = ", ".join(self._template_labels.get(template, []))
-        if kind is _Result.ERROR:
+        if kind is _ResultKind.ERROR:
             _LOGGER.error(
                 "OORT zone %s: %s failed (%s); counting it as false",
                 self.entry.title,
                 labels,
                 result,
             )
-        elif kind is _Result.UNRECOGNISED:
+        elif kind is _ResultKind.UNRECOGNISED:
             _LOGGER.warning(
                 "OORT zone %s: %s returned %r, which isn't true or false; counting it as false",
                 self.entry.title,
@@ -460,7 +448,7 @@ class ZoneRuntime:
         Home Assistant refuses to write them as a sensor state.
         """
         state = self.hass.states.get(entity_id)
-        if state is None or state.state in _MISSING:
+        if state is None or _is_missing(state.state):
             return None
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
         if unit not in TemperatureConverter.VALID_UNITS:
@@ -469,8 +457,7 @@ class ZoneRuntime:
             value = float(state.state)
         except ValueError:
             return None
-        converted = TemperatureConverter.convert(value, unit, self.unit)
-        return converted if math.isfinite(converted) else None
+        return self._in_zone_unit(value, unit)
 
     def _person_area(self, person: Person) -> str | None:
         """The ID of the room area a person is in, or None."""
@@ -482,7 +469,7 @@ class ZoneRuntime:
             if person.source_attribute
             else state.state
         )
-        if value in _MISSING:
+        if _is_missing(value):
             return None
         areas = ar.async_get(self.hass)
         area = (
@@ -491,6 +478,22 @@ class ZoneRuntime:
             else areas.async_get_area_by_name(str(value))
         )
         return area.id if area is not None and area.id in self.rooms else None
+
+    def _people_by_area(self) -> dict[str, list[str]]:
+        people: dict[str, list[str]] = {}
+        for person in self.people:
+            if (area_id := self._person_area(person)) is not None:
+                people.setdefault(area_id, []).append(person.name)
+        return people
+
+    def _room_inputs(self, room: Room) -> RoomInputs:
+        return RoomInputs(
+            open=self._any_on(room.opening_sensors) or self._template_true(room.opening_template),
+            person_present=bool(room.people),
+            occupied=self._any_on(room.occupancy_sensors)
+            or self._template_true(room.occupancy_template),
+            temperature=self._temperature(room.temperature_sensors[0]),
+        )
 
     # -- update ---------------------------------------------------------------
 
@@ -502,39 +505,21 @@ class ZoneRuntime:
         writes its state; otherwise (a state or template event) a sensor writes only
         if something it shows has changed.
         """
-        now = dt_util.utcnow().timestamp()
-        people_by_area: dict[str, list[str]] = {}
-        for person in self.people:
-            if (area_id := self._person_area(person)) is not None:
-                people_by_area.setdefault(area_id, []).append(person.name)
-
-        inputs: dict[str, RoomInputs] = {}
+        people_by_area = self._people_by_area()
         before: dict[str, tuple[Any, ...]] = {}
-        for room in self.rooms.values():
-            before[room.area_id] = _signature(room)
-            room.people = people_by_area.get(room.area_id, [])
-            room.inputs = inputs[room.area_id] = RoomInputs(
-                open=self._any_on(room.opening_sensors)
-                or self._template_true(room.opening_template),
-                person_present=bool(room.people),
-                occupied=self._any_on(room.occupancy_sensors)
-                or self._template_true(room.occupancy_template),
-                temperature=self._temperature(room.temperature_sensors[0]),
-            )
+        zone: dict[str, tuple[RoomState, RoomInputs, RoomConfig]] = {}
+        for area_id, room in self.rooms.items():
+            before[area_id] = _signature(room)
+            room.people = people_by_area.get(area_id, [])
+            room.inputs = self._room_inputs(room)
+            zone[area_id] = (room.state, room.inputs, room.config)
 
-        step = step_zone(
-            {
-                area_id: (room.state, inputs[area_id], room.config)
-                for area_id, room in self.rooms.items()
-            },
-            now,
-            hold=self._hold,
-        )
+        step = step_zone(zone, dt_util.utcnow().timestamp(), hold=self._hold)
         self.result = step.result
         for area_id, room in self.rooms.items():
             room.state = step.rooms[area_id]
             room.write_pending = write_everything or _signature(room) != before[area_id]
-        self.write_all = any(room.write_pending for room in self.rooms.values())
+        self.any_room_written = any(room.write_pending for room in self.rooms.values())
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's
             # DataUpdateCoordinator does).

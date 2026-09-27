@@ -55,6 +55,7 @@ from .const import (
     VALUE_TYPE_AREA_ID,
     VALUE_TYPE_AREA_NAME,
     ZONE_SETTINGS,
+    has_occupancy_source,
     with_defaults,
 )
 
@@ -335,9 +336,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
                 errors["base"] = error
             if not errors:
                 self._rooms[data[CONF_AREA_ID]] = data
-                if not self._people and not (
-                    data.get(CONF_OCCUPANCY_SENSORS) or data.get(CONF_OCCUPANCY_TEMPLATE)
-                ):
+                if not self._people and not has_occupancy_source(data):
                     return await self.async_step_room_no_occupancy()
                 return await self.async_step_rooms()
 

@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN
-from .zone import ZoneRuntime, issue_id
+from .zone import ZoneRuntime, repairs_issue_id
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
@@ -31,13 +31,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool
 
 async def async_unload_entry(hass: HomeAssistant, entry: OortConfigEntry) -> bool:
     """Unload an OORT zone; its Repairs issue goes with it (set again on load)."""
-    ir.async_delete_issue(hass, DOMAIN, issue_id(entry))
+    ir.async_delete_issue(hass, DOMAIN, repairs_issue_id(entry))
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: OortConfigEntry) -> None:
     """Clear the zone's Repairs issue when it is deleted."""
-    ir.async_delete_issue(hass, DOMAIN, issue_id(entry))
+    ir.async_delete_issue(hass, DOMAIN, repairs_issue_id(entry))
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: OortConfigEntry) -> None:

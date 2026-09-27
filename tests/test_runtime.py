@@ -61,7 +61,10 @@ from custom_components.overengineered_occupied_room_temperature.storage import (
     RoomExtraData,
     saved_room_state,
 )
-from custom_components.overengineered_occupied_room_temperature.zone import issue_id, room_unique_id
+from custom_components.overengineered_occupied_room_temperature.zone import (
+    repairs_issue_id,
+    room_unique_id,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -420,7 +423,7 @@ async def test_all_rooms_open_uses_plain_average(
 async def test_repairs_issue_when_no_occupancy_source(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     entry = await setup_zone(hass, [room("kitchen")])
-    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id(entry))
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, repairs_issue_id(entry))
     assert issue is not None
     assert issue.translation_placeholders == {"zone": "Home", "rooms": "Kitchen"}
 
@@ -428,7 +431,7 @@ async def test_repairs_issue_when_no_occupancy_source(hass: HomeAssistant) -> No
 async def test_no_repairs_issue_when_people_exist(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
-    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id(entry)) is None
+    assert ir.async_get(hass).async_get_issue(DOMAIN, repairs_issue_id(entry)) is None
 
 
 async def test_removing_a_room_removes_its_entity(hass: HomeAssistant) -> None:
@@ -697,7 +700,7 @@ async def test_disabling_a_zone_clears_its_repairs_issue(hass: HomeAssistant) ->
     set_temperature(hass, "kitchen", "20")
     entry = await setup_zone(hass, [room("kitchen")])
     issues = ir.async_get(hass)
-    repairs_id = issue_id(entry)
+    repairs_id = repairs_issue_id(entry)
     assert issues.async_get_issue(DOMAIN, repairs_id) is not None
 
     await hass.config_entries.async_set_disabled_by(entry.entry_id, ConfigEntryDisabler.USER)
@@ -713,7 +716,7 @@ async def test_deleting_a_zone_clears_its_repairs_issue(hass: HomeAssistant) -> 
     set_temperature(hass, "kitchen", "20")
     entry = await setup_zone(hass, [room("kitchen")])
     issues = ir.async_get(hass)
-    repairs_id = issue_id(entry)
+    repairs_id = repairs_issue_id(entry)
     assert issues.async_get_issue(DOMAIN, repairs_id) is not None
 
     assert await hass.config_entries.async_remove(entry.entry_id)

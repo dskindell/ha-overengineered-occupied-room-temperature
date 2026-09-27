@@ -87,14 +87,11 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
 
     @callback
     def _async_on_runtime_update(self) -> None:
-        # Written on the minute timer and when the room's status or inputs change,
-        # not on every temperature reading.
         if self._room.write_pending:
             self.async_write_ha_state()
 
     @property
     def native_value(self) -> float:
-        # Rounded so a settled weight stops producing new recorder rows.
         return round(self._room.state.weight, WEIGHT_DECIMALS)
 
     @property
@@ -111,7 +108,7 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
             "people": self._room.people,
             "target_weight": state.target,
             "tau": state.tau,
-            "tau_name": state.tau_name,
+            "tau_name": state.tau_name.value if state.tau_name else None,
             "last_occupied_state": (
                 state.last_occupied_state.value if state.last_occupied_state else None
             ),
@@ -143,12 +140,10 @@ class WeightedTemperatureSensor(_OortSensor):
 
     @callback
     def _async_on_runtime_update(self) -> None:
-        # total_weight moves on almost every temperature reading while any weight
-        # is changing, and any changed attribute makes a new state row. So write
-        # only on the minute timer, when a room's status or inputs change, or when
-        # the value, contributing_rooms or fallback change.
+        # total_weight changes with almost every reading while weights move, and any
+        # changed attribute makes a new recorder row.
         visible = self._visible()
-        if self._runtime.write_all or visible != self._written:
+        if self._runtime.any_room_written or visible != self._written:
             self._total_weight = self._current_total_weight()
             self._written = visible
             self.async_write_ha_state()
