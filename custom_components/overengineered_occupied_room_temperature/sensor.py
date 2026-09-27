@@ -18,7 +18,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import OortConfigEntry
 from .const import DOMAIN, TEMPERATURE_DECIMALS, WEIGHT_DECIMALS
 from .storage import RoomExtraData
-from .zone import Room, ZoneRuntime, room_unique_id, temperature_unique_id
+from .zone import Room, ZoneRuntime, room_attributes, room_unique_id, temperature_unique_id
 
 
 async def async_setup_entry(
@@ -96,24 +96,7 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        state = self._room.state
-        inputs = state.inputs
-        return {
-            "area_id": self._room.area_id,
-            "status": state.status.value,
-            "open": inputs.open if inputs else None,
-            "temperature_available": inputs.temperature is not None if inputs else None,
-            "temperature_stale": state.stale,
-            "person_present": inputs.person_present if inputs else None,
-            "occupied": inputs.occupied if inputs else None,
-            "people": self._room.people,
-            "target_weight": state.target,
-            "tau": state.tau,
-            "tau_name": state.tau_name.value if state.tau_name else None,
-            "last_occupied_state": (
-                state.last_occupied_state.value if state.last_occupied_state else None
-            ),
-        }
+        return room_attributes(self._room)
 
 
 class WeightedTemperatureSensor(_OortSensor):

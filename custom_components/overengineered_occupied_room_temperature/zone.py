@@ -149,24 +149,26 @@ def repairs_issue_id(entry: ConfigEntry) -> str:
     return f"no_occupancy_source_{entry.entry_id}"
 
 
-def _signature(room: Room) -> tuple[Any, ...]:
-    """What a room's weight sensor shows apart from the weight itself."""
-    state, inputs = room.state, room.state.inputs
-    return (
-        state.status,
-        state.target,
-        state.tau_name,
-        state.stale,
-        tuple(room.people),
-        None
-        if inputs is None
-        else (
-            inputs.open,
-            inputs.person_present,
-            inputs.occupied,
-            inputs.temperature is not None,
+def room_attributes(room: Room) -> dict[str, Any]:
+    """The attributes of a room's weight sensor."""
+    state = room.state
+    inputs = state.inputs
+    return {
+        "area_id": room.area_id,
+        "status": state.status.value,
+        "open": inputs.open if inputs else None,
+        "temperature_available": inputs.temperature is not None if inputs else None,
+        "temperature_stale": state.stale,
+        "person_present": inputs.person_present if inputs else None,
+        "occupied": inputs.occupied if inputs else None,
+        "people": room.people,
+        "target_weight": state.target,
+        "tau": state.tau,
+        "tau_name": state.tau_name.value if state.tau_name else None,
+        "last_occupied_state": (
+            state.last_occupied_state.value if state.last_occupied_state else None
         ),
-    )
+    }
 
 
 class ZoneRuntime:
@@ -494,10 +496,10 @@ class ZoneRuntime:
         if something it shows has changed.
         """
         people_by_area = self._people_by_area()
-        before: dict[str, tuple[Any, ...]] = {}
+        before: dict[str, dict[str, Any]] = {}
         zone: dict[str, tuple[RoomState, RoomInputs, RoomConfig]] = {}
         for area_id, room in self.rooms.items():
-            before[area_id] = _signature(room)
+            before[area_id] = room_attributes(room)
             room.people = people_by_area.get(area_id, [])
             zone[area_id] = (room.state, self._room_inputs(room), room.config)
 
@@ -505,7 +507,7 @@ class ZoneRuntime:
         self.result = step.result
         for area_id, room in self.rooms.items():
             room.state = step.rooms[area_id]
-            room.write_pending = write_everything or _signature(room) != before[area_id]
+            room.write_pending = write_everything or room_attributes(room) != before[area_id]
         self.any_room_written = any(room.write_pending for room in self.rooms.values())
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's
