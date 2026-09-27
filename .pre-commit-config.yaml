@@ -1,5 +1,6 @@
 # Same checks as CI, run locally. One-time setup: uvx pre-commit install
 default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
