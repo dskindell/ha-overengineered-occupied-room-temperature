@@ -35,6 +35,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_SOURCE_ENTITY,
     CONF_TEMPERATURE_SENSOR,
     CONF_TEMPERATURE_SENSORS,
+    CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     CONF_ZONE_SETTINGS,
     DEFAULTS,
@@ -200,7 +201,7 @@ async def test_create_zone_full_journey(hass: HomeAssistant) -> None:
     result = await flow.menu("finish")
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Home"
-    assert result["data"] == {CONF_NAME: "Home", "temperature_unit": "°C"}
+    assert result["data"] == {CONF_NAME: "Home", CONF_TEMPERATURE_UNIT: "°C"}
     options = result["options"]
     assert {
         CONF_DEFAULTS: options[CONF_DEFAULTS],

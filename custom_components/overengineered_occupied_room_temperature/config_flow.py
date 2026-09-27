@@ -112,6 +112,17 @@ DEFAULTS_SCHEMA = vol.Schema(
 NAME_SCHEMA = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()})
 
 
+def _on_off_entities() -> selector.EntitySelector:
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(
+            filter=selector.EntityWithDeviceFilterSelectorConfig(
+                domain=["binary_sensor", "input_boolean"]
+            ),
+            multiple=True,
+        )
+    )
+
+
 def _room_schema(*, new: bool) -> vol.Schema:
     """Room form. The area is chosen only when the room is added."""
     schema: dict[vol.Marker, Any] = {}
@@ -126,23 +137,9 @@ def _room_schema(*, new: bool) -> vol.Schema:
                     )
                 )
             ),
-            vol.Optional(CONF_OCCUPANCY_SENSORS): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    filter=selector.EntityWithDeviceFilterSelectorConfig(
-                        domain=["binary_sensor", "input_boolean"]
-                    ),
-                    multiple=True,
-                )
-            ),
+            vol.Optional(CONF_OCCUPANCY_SENSORS): _on_off_entities(),
             vol.Optional(CONF_OCCUPANCY_TEMPLATE): selector.TemplateSelector(),
-            vol.Optional(CONF_OPENING_SENSORS): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    filter=selector.EntityWithDeviceFilterSelectorConfig(
-                        domain=["binary_sensor", "input_boolean"]
-                    ),
-                    multiple=True,
-                )
-            ),
+            vol.Optional(CONF_OPENING_SENSORS): _on_off_entities(),
             vol.Optional(CONF_OPENING_TEMPLATE): selector.TemplateSelector(),
             vol.Required(CONF_OVERRIDES): section(
                 vol.Schema({vol.Optional(key): _number(key) for key in ROOM_SETTINGS}),
@@ -153,6 +150,17 @@ def _room_schema(*, new: bool) -> vol.Schema:
     if not new:
         schema[vol.Optional(CONF_REMOVE, default=False)] = selector.BooleanSelector()
     return vol.Schema(schema)
+
+
+def _room_data(user_input: Mapping[str, Any], area_id: str | None) -> dict[str, Any]:
+    """A room as stored, from the room form (``area_id`` is set when editing)."""
+    fields = {k: v for k, v in user_input.items() if k not in (CONF_OVERRIDES, CONF_REMOVE)}
+    data = _without_empty(fields)
+    data[CONF_TEMPERATURE_SENSORS] = [data.pop(CONF_TEMPERATURE_SENSOR)]
+    data[CONF_OVERRIDES] = _without_empty(user_input.get(CONF_OVERRIDES, {}))
+    if area_id is not None:
+        data[CONF_AREA_ID] = area_id
+    return data
 
 
 def _person_schema(*, new: bool) -> vol.Schema:
@@ -217,7 +225,8 @@ class ZoneMenu(ConfigEntryBaseFlow):
 
     finish_step: str
 
-    _defaults: dict[str, Any]
+    _room_defaults: dict[str, float]
+    _zone_settings: dict[str, float]
     _rooms: dict[str, dict[str, Any]]
     _people: dict[str, dict[str, Any]]
     _area_id: str | None
@@ -227,15 +236,15 @@ class ZoneMenu(ConfigEntryBaseFlow):
     def _load(self, options: Mapping[str, Any]) -> None:
         options = deepcopy(dict(options))
         # Settings added since the zone was saved get their defaults.
-        self._defaults = with_defaults(options.get(CONF_DEFAULTS, {}), ROOM_SETTINGS)
-        self._zone = with_defaults(options.get(CONF_ZONE_SETTINGS, {}), ZONE_SETTINGS)
+        self._room_defaults = with_defaults(options.get(CONF_DEFAULTS, {}), ROOM_SETTINGS)
+        self._zone_settings = with_defaults(options.get(CONF_ZONE_SETTINGS, {}), ZONE_SETTINGS)
         self._rooms = options.get(CONF_ROOMS, {})
         self._people = options.get(CONF_PEOPLE, {})
 
     def _options(self) -> dict[str, Any]:
         return {
-            CONF_DEFAULTS: self._defaults,
-            CONF_ZONE_SETTINGS: self._zone,
+            CONF_DEFAULTS: self._room_defaults,
+            CONF_ZONE_SETTINGS: self._zone_settings,
             CONF_ROOMS: self._rooms,
             CONF_PEOPLE: self._people,
         }
@@ -259,7 +268,7 @@ class ZoneMenu(ConfigEntryBaseFlow):
             # Placeholder values aren't translated, so these two words stay English.
             description_placeholders={
                 "rooms": ", ".join(rooms) or "none yet",
-                "people": ", ".join(people) or "none",
+                "people": ", ".join(people) or "none yet",
             },
         )
 
@@ -272,14 +281,14 @@ class ZoneMenu(ConfigEntryBaseFlow):
             defaults = {k: v for k, v in user_input.items() if k != CONF_ZONE_SETTINGS}
             zone = dict(user_input[CONF_ZONE_SETTINGS])
             if (error := validate_settings({**defaults, **zone})) is None:
-                self._defaults, self._zone = defaults, zone
+                self._room_defaults, self._zone_settings = defaults, zone
                 return await self.async_step_menu()
             errors["base"] = error
         return self.async_show_form(
             step_id="defaults",
             data_schema=self.add_suggested_values_to_schema(
                 DEFAULTS_SCHEMA,
-                user_input or {**self._defaults, CONF_ZONE_SETTINGS: self._zone},
+                user_input or {**self._room_defaults, CONF_ZONE_SETTINGS: self._zone_settings},
             ),
             errors=errors,
         )
@@ -323,15 +332,9 @@ class ZoneMenu(ConfigEntryBaseFlow):
             if area_id is not None and user_input.get(CONF_REMOVE):
                 del self._rooms[area_id]
                 return await self.async_step_rooms()
-            fields = {k: v for k, v in user_input.items() if k not in (CONF_OVERRIDES, CONF_REMOVE)}
-            data = _without_empty(fields)
-            data[CONF_TEMPERATURE_SENSORS] = [data.pop(CONF_TEMPERATURE_SENSOR)]
-            data[CONF_OVERRIDES] = _without_empty(user_input.get(CONF_OVERRIDES, {}))
-            if area_id is None:
-                if data[CONF_AREA_ID] in self._rooms:
-                    errors[CONF_AREA_ID] = "area_already_configured"
-            else:
-                data[CONF_AREA_ID] = area_id
+            data = _room_data(user_input, area_id)
+            if area_id is None and data[CONF_AREA_ID] in self._rooms:
+                errors[CONF_AREA_ID] = "area_already_configured"
             if (error := validate_settings(data[CONF_OVERRIDES])) is not None:
                 errors["base"] = error
             if not errors:

@@ -44,6 +44,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_SOURCE_ENTITY,
     CONF_TEMPERATURE_SENSOR,
     CONF_TEMPERATURE_SENSORS,
+    CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     CONF_ZONE_SETTINGS,
     DEFAULTS,
@@ -126,7 +127,7 @@ async def setup_zone(
         domain=DOMAIN,
         title="Home",
         version=1,
-        data={CONF_NAME: "Home", "temperature_unit": hass.config.units.temperature_unit},
+        data={CONF_NAME: "Home", CONF_TEMPERATURE_UNIT: hass.config.units.temperature_unit},
         options=zone_options(items, **settings),
     )
     entry.add_to_hass(hass)
@@ -1465,7 +1466,7 @@ async def test_zone_saved_without_a_setting_loads_with_its_default(
         domain=DOMAIN,
         title="Home",
         version=1,
-        data={CONF_NAME: "Home", "temperature_unit": "°C"},
+        data={CONF_NAME: "Home", CONF_TEMPERATURE_UNIT: "°C"},
         options={**options, CONF_DEFAULTS: {**stored, "retired_setting": 7}},
     )
     entry.add_to_hass(hass)
@@ -1497,7 +1498,7 @@ SAVED = {
 def test_saved_state_records_its_version() -> None:
     data = RoomExtraData(RoomState(weight=0.5), "°C").as_dict()
     assert data["version"] == SAVED_VERSION == 1
-    assert data["temperature_unit"] == "°C"
+    assert data[CONF_TEMPERATURE_UNIT] == "°C"
     assert saved_room_state(data) == RoomState(weight=0.5)
 
 

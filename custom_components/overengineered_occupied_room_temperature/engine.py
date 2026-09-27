@@ -45,11 +45,7 @@ class TauName(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Taus:
-    """Time constants in minutes. A tau of 0 means the target is reached immediately.
-
-    Defaults and limits live in the integration's settings table (``const.SETTINGS``,
-    keys ``tau_<field>``).
-    """
+    """Time constants in minutes. A tau of 0 means the target is reached immediately."""
 
     person_rise: float
     person_fall: float
@@ -61,7 +57,7 @@ class Taus:
 
 @dataclass(frozen=True, slots=True)
 class Weights:
-    """Target weights for each status (open and dropout are always 0); keys ``w_<field>``."""
+    """Target weights for each status (open and dropout are always 0)."""
 
     person: float
     occupied: float
@@ -274,6 +270,7 @@ class Aggregate:
     total_weight: float
     contributing_rooms: int
     fallback: bool
+    """The plain-average term outweighs all the rooms' weights together."""
 
 
 @dataclass(frozen=True, slots=True)

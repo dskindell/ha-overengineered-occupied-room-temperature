@@ -6,11 +6,13 @@ from typing import Any, Final
 
 DOMAIN: Final = "overengineered_occupied_room_temperature"
 
-# Zone (config entry): `data` holds the name; `options` hold the defaults, rooms
-# and people, all edited through the zone's menu.
+# Zone (config entry): `data` holds the name and the temperature unit; `options`
+# hold the room defaults, the zone-wide settings, the rooms and the people, all
+# edited through the zone's menu.
 CONF_NAME: Final = "name"
 CONF_TEMPERATURE_UNIT: Final = "temperature_unit"  # fixed when the zone is created
-CONF_DEFAULTS: Final = "defaults"
+CONF_DEFAULTS: Final = "defaults"  # settings each room uses unless it overrides them
+CONF_ZONE_SETTINGS: Final = "zone"  # settings for the whole zone
 CONF_ROOMS: Final = "rooms"  # {area_id: room data}
 CONF_PEOPLE: Final = "people"  # {person_id: person data}
 
@@ -23,9 +25,7 @@ CONF_REMOVE: Final = "remove"
 CHOICE_ADD: Final = "add-new"
 CHOICE_DONE: Final = "back-to-menu"
 
-# Settings: rooms' defaults in options[CONF_DEFAULTS], which a room can
-# override; zone-wide settings in options[CONF_ZONE_SETTINGS].
-CONF_ZONE_SETTINGS: Final = "zone"
+# Setting keys (see SETTINGS).
 CONF_TAU_PERSON_RISE: Final = "tau_person_rise"
 CONF_TAU_PERSON_FALL: Final = "tau_person_fall"
 CONF_TAU_OCCUPANCY_RISE: Final = "tau_occupancy_rise"
@@ -99,12 +99,12 @@ class Setting:
 
 def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
     return Setting(
-        key,
-        default,
-        0.0,
-        MAX_TAU,
-        "tau_negative" if zero_allowed else "tau_not_positive",
-        "tau_too_large",
+        key=key,
+        default=default,
+        minimum=0.0,
+        maximum=MAX_TAU,
+        too_small="tau_negative" if zero_allowed else "tau_not_positive",
+        too_large="tau_too_large",
         minimum_allowed=zero_allowed,
     )
 
@@ -112,7 +112,14 @@ def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
 def _weight(
     key: str, default: float, minimum: float = 0.0, too_small: str = "weight_negative"
 ) -> Setting:
-    return Setting(key, default, minimum, MAX_WEIGHT, too_small, "weight_too_large")
+    return Setting(
+        key=key,
+        default=default,
+        minimum=minimum,
+        maximum=MAX_WEIGHT,
+        too_small=too_small,
+        too_large="weight_too_large",
+    )
 
 
 SETTINGS: Final = (
@@ -126,12 +133,12 @@ SETTINGS: Final = (
     _weight(CONF_W_OCCUPIED, 0.5),
     _weight(CONF_W_BASE, 0.001, MIN_BASE_WEIGHT, "base_weight_too_small"),
     Setting(
-        CONF_STALE_LIMIT,
-        5.0,
-        0.0,
-        MAX_STALE_LIMIT,
-        "stale_limit_not_positive",
-        "stale_limit_too_large",
+        key=CONF_STALE_LIMIT,
+        default=5.0,
+        minimum=0.0,
+        maximum=MAX_STALE_LIMIT,
+        too_small="stale_limit_not_positive",
+        too_large="stale_limit_too_large",
         minimum_allowed=False,
         per_room=False,
     ),
