@@ -24,8 +24,9 @@ from .engine import RoomState, Status, TauName
 SAVED_VERSION: Final = 1
 KEY_VERSION: Final = "version"
 KEY_UNIT: Final = "temperature_unit"
-# Inputs are replaced by the first update after a restore, so they aren't saved.
-_UNSAVED: Final = frozenset({"inputs"})
+# A restored room is stepped afresh: its inputs are replaced and the downtime
+# isn't counted, so neither is saved.
+_UNSAVED: Final = frozenset({"inputs", "last_update"})
 _FIELDS: Final = frozenset(field.name for field in fields(RoomState)) - _UNSAVED
 
 
@@ -85,5 +86,4 @@ def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
         last_seen=_number(data.get("last_seen")),
         dropout_since=_number(data.get("dropout_since")),
         stale=data.get("stale") is True,
-        last_update=_number(data.get("last_update")),
     )

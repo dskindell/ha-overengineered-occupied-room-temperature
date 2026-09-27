@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 import math
 from typing import Any
+from unittest.mock import patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
@@ -731,6 +732,38 @@ async def test_an_open_room_stops_contributing_once_faded(
     attributes = hass.states.get(TEMPERATURE).attributes
     assert attributes["contributing_rooms"] == 1
     assert attributes["total_weight"] == pytest.approx(weight(hass, KITCHEN_WEIGHT), abs=1e-4)
+
+
+async def test_changes_to_attributes_oort_does_not_read_are_ignored(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("binary_sensor.kitchen_motion", "on", {"battery": 90})
+    hass.states.async_set("sensor.alex_phone", "home", {"area": "Kitchen", "battery": 80})
+    entry = await setup_zone(
+        hass,
+        [
+            room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}),
+            person("Alex", "sensor.alex_phone", **{CONF_SOURCE_ATTRIBUTE: "area"}),
+        ],
+    )
+    runtime = entry.runtime_data
+    with patch.object(runtime, "async_update", wraps=runtime.async_update) as update:
+        hass.states.async_set("binary_sensor.kitchen_motion", "on", {"battery": 89})
+        hass.states.async_set("sensor.alex_phone", "home", {"area": "Kitchen", "battery": 79})
+        set_temperature(hass, "kitchen", "20")  # same reading, no change at all
+        await hass.async_block_till_done()
+        assert update.call_count == 0
+
+        hass.states.async_set("sensor.alex_phone", "home", {"area": "Office", "battery": 79})
+        await hass.async_block_till_done()
+        assert update.call_count == 1  # the attribute a person is read from
+
+
+async def test_a_temperature_unit_change_alone_is_read(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    await setup_zone(hass, [room("kitchen")])
+    set_temperature(hass, "kitchen", "20", unit="°F")
+    await hass.async_block_till_done()
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(-6.7)
 
 
 async def test_area_name_matching_ignores_case_and_spaces(hass: HomeAssistant) -> None:

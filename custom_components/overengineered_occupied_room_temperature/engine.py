@@ -151,13 +151,15 @@ def room_status(inputs: RoomInputs) -> Status:
 
 def target_weight(status: Status, weights: Weights) -> float:
     """Weight a room heads toward for a given status."""
-    return {
-        Status.OPEN: 0.0,
-        Status.DROPOUT: 0.0,
-        Status.PERSON: weights.person,
-        Status.OCCUPIED: weights.occupied,
-        Status.UNOCCUPIED: weights.base,
-    }[status]
+    match status:
+        case Status.PERSON:
+            return weights.person
+        case Status.OCCUPIED:
+            return weights.occupied
+        case Status.UNOCCUPIED:
+            return weights.base
+        case _:
+            return 0.0
 
 
 def select_tau_name(

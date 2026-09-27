@@ -30,11 +30,13 @@ def test_saved_state_records_its_version() -> None:
     assert saved_room_state(data) == RoomState(weight=0.5)
 
 
-def test_inputs_are_not_saved_or_restored() -> None:
-    state = RoomState(weight=0.5, inputs=RoomInputs(False, False, True, 20.0))
+def test_inputs_and_update_time_are_not_saved_or_restored() -> None:
+    state = RoomState(weight=0.5, last_update=200.0, inputs=RoomInputs(False, False, True, 20.0))
     data = RoomExtraData(state, "°C").as_dict()
     assert "inputs" not in data
-    assert saved_room_state({**data, "inputs": {"open": True}}) == RoomState(weight=0.5)
+    assert "last_update" not in data
+    restored = saved_room_state({**data, "inputs": {"open": True}, "last_update": 200.0})
+    assert restored == RoomState(weight=0.5)
 
 
 def test_saved_state_ignores_unknown_fields_and_defaults_missing_ones() -> None:
@@ -87,10 +89,9 @@ def test_every_saved_field_is_read_back() -> None:
         last_seen=100.0,
         dropout_since=160.0,
         stale=True,
-        last_update=200.0,
     )
     unset = [f.name for f in fields(RoomState) if getattr(state, f.name) == f.default]
-    assert unset == ["inputs"], "set every saved field above"
+    assert unset == ["last_update", "inputs"], "set every saved field above"
     assert saved_room_state(RoomExtraData(state, "°C").as_dict()) == state
 
 
@@ -101,7 +102,6 @@ def test_every_saved_field_is_read_back() -> None:
         ({"last_known_temperature": math.nan}, "last_known_temperature", None),
         ({"last_seen": [1]}, "last_seen", None),
         ({"dropout_since": math.inf}, "dropout_since", None),
-        ({"last_update": True}, "last_update", None),
         ({"stale": "yes"}, "stale", False),
         ({"tau_name": "bogus"}, "tau_name", None),
         ({"last_occupied_state": "bogus"}, "last_occupied_state", None),

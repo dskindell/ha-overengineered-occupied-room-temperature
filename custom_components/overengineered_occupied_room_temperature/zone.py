@@ -120,6 +120,8 @@ class Room:
     config: RoomConfig
     state: RoomState = field(default_factory=RoomState)
     people: list[str] = field(default_factory=list)
+    attributes: dict[str, Any] = field(default_factory=dict)
+    """What the room's weight sensor shows besides the weight, as of the last update."""
     write_pending: bool = True
     """Whether the room's weight sensor should write its state after this update."""
 
@@ -212,6 +214,8 @@ class ZoneRuntime:
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
         self._template_result_kinds: dict[Template, _ResultKind] = {}
+        # The attributes read from each watched entity, besides its state.
+        self._read_attributes: dict[str, set[str]] = {}
         # Grace period only while Home Assistant itself is starting.
         self._hold = hass.state is not CoreState.running
         self._listeners: list[Callable[[], None]] = []
@@ -287,6 +291,13 @@ class ZoneRuntime:
             watched.update(room.temperature_sensors)
             watched.update(room.occupancy_sensors)
             watched.update(room.opening_sensors)
+            for entity_id in room.temperature_sensors:
+                self._read_attributes.setdefault(entity_id, set()).add(ATTR_UNIT_OF_MEASUREMENT)
+        for person in self.people:
+            if person.source_attribute:
+                self._read_attributes.setdefault(person.source_entity, set()).add(
+                    person.source_attribute
+                )
         if watched:
             entry.async_on_unload(
                 async_track_state_change_event(self.hass, sorted(watched), self._async_on_state)
@@ -356,7 +367,18 @@ class ZoneRuntime:
     # -- triggers -------------------------------------------------------------
 
     @callback
-    def _async_on_state(self, _event: Event[EventStateChangedData]) -> None:
+    def _async_on_state(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if (
+            old is not None
+            and new is not None
+            and old.state == new.state
+            and all(
+                old.attributes.get(name) == new.attributes.get(name)
+                for name in self._read_attributes.get(event.data["entity_id"], ())
+            )
+        ):
+            return  # only attributes OORT doesn't read changed
         self.async_update(write_everything=False)
 
     @callback
@@ -452,7 +474,7 @@ class ZoneRuntime:
             return None
         return self._in_zone_unit(value, unit)
 
-    def _person_area(self, person: Person) -> str | None:
+    def _person_area(self, person: Person, areas: ar.AreaRegistry) -> str | None:
         """The ID of the room area a person is in, or None."""
         state = self.hass.states.get(person.source_entity)
         if state is None:
@@ -464,7 +486,6 @@ class ZoneRuntime:
         )
         if _is_missing(value):
             return None
-        areas = ar.async_get(self.hass)
         area = (
             areas.async_get_area(str(value))
             if person.by_area_id
@@ -473,9 +494,10 @@ class ZoneRuntime:
         return area.id if area is not None and area.id in self.rooms else None
 
     def _people_by_area(self) -> dict[str, list[str]]:
+        areas = ar.async_get(self.hass)
         people: dict[str, list[str]] = {}
         for person in self.people:
-            if (area_id := self._person_area(person)) is not None:
+            if (area_id := self._person_area(person, areas)) is not None:
                 people.setdefault(area_id, []).append(person.name)
         return people
 
@@ -499,10 +521,8 @@ class ZoneRuntime:
         if something it shows has changed.
         """
         people_by_area = self._people_by_area()
-        before: dict[str, dict[str, Any]] = {}
         zone: dict[str, tuple[RoomState, RoomInputs, RoomConfig]] = {}
         for area_id, room in self.rooms.items():
-            before[area_id] = room_attributes(room)
             room.people = people_by_area.get(area_id, [])
             zone[area_id] = (room.state, self._room_inputs(room), room.config)
 
@@ -510,7 +530,9 @@ class ZoneRuntime:
         self.result = step.result
         for area_id, room in self.rooms.items():
             room.state = step.rooms[area_id]
-            room.write_pending = write_everything or room_attributes(room) != before[area_id]
+            attributes = room_attributes(room)
+            room.write_pending = write_everything or attributes != room.attributes
+            room.attributes = attributes
         self.any_room_written = any(room.write_pending for room in self.rooms.values())
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's
