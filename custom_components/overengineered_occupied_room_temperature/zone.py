@@ -253,7 +253,8 @@ class ZoneRuntime:
 
         Reads Home Assistant's restore store directly: it's loaded before any
         integration starts, and on a reload it holds the states saved at unload.
-        Nothing is written here, since no listener is registered yet.
+        A disabled sensor's saved state is never refreshed, so its room starts
+        afresh. Nothing is written here, since no listener is registered yet.
         """
         registry = er.async_get(self.hass)
         saved = restore_state.async_get(self.hass).last_states
@@ -261,7 +262,9 @@ class ZoneRuntime:
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, room_unique_id(self.entry, area_id)
             )
-            stored = saved.get(entity_id) if entity_id else None
+            if entity_id is None or registry.entities[entity_id].disabled:
+                continue
+            stored = saved.get(entity_id)
             if stored is None or stored.extra_data is None:
                 continue
             data = stored.extra_data.as_dict()

@@ -108,8 +108,13 @@ def set_temperature(hass: HomeAssistant, area_id: str, value: str, unit: str = "
 
 
 async def setup_zone(
-    hass: HomeAssistant, items: list[tuple[str, str, dict[str, Any]]], **settings: float
+    hass: HomeAssistant,
+    items: list[tuple[str, str, dict[str, Any]]],
+    *,
+    disabled: tuple[str, ...] = (),
+    **settings: float,
 ) -> MockConfigEntry:
+    """Set up a zone; the rooms in ``disabled`` have their weight sensor disabled."""
     areas = ar.async_get(hass)
     for area in ("kitchen", "office"):
         if areas.async_get_area(area) is None:
@@ -133,6 +138,7 @@ async def setup_zone(
                 room_unique_id(entry, key),
                 suggested_object_id=f"oort_home_{key}_weight",
                 config_entry=entry,
+                disabled_by=er.RegistryEntryDisabler.USER if key in disabled else None,
             )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -1479,6 +1485,35 @@ async def test_zone_saved_without_a_setting_loads_with_its_default(
 # ---------------------------------------------------------------------------
 # Saved room state
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("freezer")
+async def test_room_with_a_disabled_sensor_starts_afresh_after_a_restart(
+    hass: HomeAssistant,
+) -> None:
+    """A disabled sensor's saved state is an old snapshot, so it isn't restored."""
+    restore_room_state(hass, weight=0.9, target=0.9, tau=3.0, status=Status.PERSON)
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_zone(hass, [room("kitchen")], disabled=("kitchen",))
+    assert hass.states.get(KITCHEN_WEIGHT) is None
+    assert entry.runtime_data.rooms["kitchen"].state.weight == 0.0
+
+
+async def test_room_with_a_disabled_sensor_starts_afresh_after_a_reload(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await advance(hass, freezer, 10)
+    assert weight(hass, KITCHEN_WEIGHT) > 0.9
+
+    er.async_get(hass).async_update_entity(
+        KITCHEN_WEIGHT, disabled_by=er.RegistryEntryDisabler.USER
+    )
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.rooms["kitchen"].state.weight == 0.0
 
 
 async def test_room_restored_from_state_saved_by_another_version(hass: HomeAssistant) -> None:

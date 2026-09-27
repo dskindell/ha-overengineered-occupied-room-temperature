@@ -173,7 +173,7 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `open` or `dropout` — so you can see both the direction and the reason. |
 | `last_occupied_state` | The last status that was `person` or `occupied` (used to pick the correct fall tau); `null` if the room has never been occupied. |
 
-Each room's state is restored across a Home Assistant restart and when the zone is reloaded or reconfigured: its weight, status and last reading. The downtime itself isn't counted as elapsed time — the room resumes at the weight it had before rather than jumping as if time had passed. The saved reading is reused only if it's newer than the stale limit.
+Each room's state is restored across a Home Assistant restart and when the zone is reloaded or reconfigured: its weight, status and last reading. The downtime itself isn't counted as elapsed time — the room resumes at the weight it had before rather than jumping as if time had passed. The saved reading is reused only if it's newer than the stale limit. A room whose weight sensor is disabled isn't saved, so it starts again from 0 after every restart or reload.
 
 ### `Temperature` sensor
 
