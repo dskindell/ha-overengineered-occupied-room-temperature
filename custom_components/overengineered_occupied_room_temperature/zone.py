@@ -225,6 +225,7 @@ class ZoneRuntime:
         self._grace = hass.state is not CoreState.running
         self._started = False
         self._cancel_deadline: Callable[[], None] | None = None
+        self._deadline: float | None = None
         self._listeners: list[Callable[[], None]] = []
 
     def _template(self, value: str | None) -> Template | None:
@@ -281,6 +282,10 @@ class ZoneRuntime:
             data = stored.extra_data.as_dict()
             if (state := saved_room_state(data)) is not None:
                 self._restore_room(room, state, saved_unit(data))
+                # While an exit is delayed the people have gone, so show who was there.
+                people = stored.state.attributes.get("people")
+                if state.person_present and isinstance(people, list):
+                    room.shown_people = [name for name in people if isinstance(name, str)]
         # The template tracker only starts in async_start, so render each template
         # once now; otherwise the first result would count every template as false.
         for room in self.rooms.values():
@@ -349,19 +354,27 @@ class ZoneRuntime:
         if self._cancel_deadline is not None:
             self._cancel_deadline()
             self._cancel_deadline = None
+        self._deadline = None
 
     @callback
     def _async_schedule_deadline(self, deadline: float | None) -> None:
         """Update when a delayed presence change will count, so it counts on time."""
+        if deadline == self._deadline or not self._started:
+            return
         self._async_cancel_deadline()
-        if deadline is not None and self._started:
+        if deadline is not None:
+            self._deadline = deadline
+            # A millisecond late, so the update is past the deadline despite rounding.
             self._cancel_deadline = async_track_point_in_utc_time(
-                self.hass, self._async_on_deadline, datetime.fromtimestamp(deadline, UTC)
+                self.hass,
+                self._async_on_deadline,
+                datetime.fromtimestamp(deadline + 0.001, UTC),
             )
 
     @callback
     def _async_on_deadline(self, _now: datetime) -> None:
         self._cancel_deadline = None
+        self._deadline = None
         self.async_update(write_everything=False)
 
     @callback

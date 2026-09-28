@@ -176,7 +176,7 @@ def delayed(
     if counted is None or current == counted:
         return current, None
     since = now if since is None else since
-    if now - since >= (enter if current else exit_) * 60:
+    if now >= since + (enter if current else exit_) * 60:
         return current, None
     return counted, since
 

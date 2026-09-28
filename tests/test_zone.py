@@ -1907,3 +1907,87 @@ async def test_exit_delay_keeps_the_person_counted(
     kitchen = hass.states.get(KITCHEN_WEIGHT).attributes
     assert (kitchen["status"], kitchen["people"]) == ("unoccupied", [])
     assert kitchen["tau_name"] == "person_fall"
+
+
+async def test_exit_delay_with_two_people_shows_who_was_last_there(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    hass.states.async_set("sensor.sam_area", "Kitchen")
+    await setup_zone(
+        hass,
+        [
+            room("kitchen"),
+            room("office"),
+            person("Alex", "sensor.alex_area"),
+            person("Sam", "sensor.sam_area"),
+        ],
+        delay_person_exit=2.0,
+    )
+    hass.states.async_set("sensor.alex_area", "Office")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == ["Sam"]
+    hass.states.async_set("sensor.sam_area", "Office")
+    await hass.async_block_till_done()
+    kitchen = hass.states.get(KITCHEN_WEIGHT).attributes
+    assert (kitchen["status"], kitchen["people"]) == ("person", ["Sam"])
+    await advance(hass, freezer, 2)
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == []
+
+
+async def test_a_pending_delay_stops_with_the_zone(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "not_home")
+    entry = await setup_zone(
+        hass, [room("kitchen"), person("Alex", "sensor.alex_area")], delay_person_enter=1.0
+    )
+    runtime = entry.runtime_data
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    with patch.object(runtime, "async_update") as update:
+        await advance(hass, freezer, seconds=90)
+    update.assert_not_called()
+
+
+async def test_a_delayed_exit_keeps_its_people_after_a_restart(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    now = dt_util.utcnow().timestamp()
+    state = RoomState(
+        weight=1.0,
+        target=1.0,
+        tau=3.0,
+        tau_name=TauName.PERSON_RISE,
+        status=Status.PERSON,
+        last_occupied_state=Status.PERSON,
+        last_known_temperature=20.0,
+        last_seen=now,
+        person_present=True,
+        person_since=now - 30,
+        occupied=False,
+    )
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(KITCHEN_WEIGHT, "1.0", {"people": ["Alex", 7]}),
+                RoomExtraData(state, "°C").as_dict(),
+            )
+        ],
+    )
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "not_home")
+    await setup_zone(
+        hass, [room("kitchen"), person("Alex", "sensor.alex_area")], delay_person_exit=1.0
+    )
+    kitchen = hass.states.get(KITCHEN_WEIGHT).attributes
+    assert (kitchen["status"], kitchen["people"]) == ("person", ["Alex"])
+    await advance(hass, freezer, seconds=30)
+    kitchen = hass.states.get(KITCHEN_WEIGHT).attributes
+    assert (kitchen["status"], kitchen["people"]) == ("unoccupied", [])
