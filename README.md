@@ -1,4 +1,4 @@
-# Overengineered Occupied-Room Temperature (OORT)
+# <img src="docs/images/icon.svg" alt="" height="40"> Overengineered Occupied-Room Temperature (OORT)
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration that keeps the rooms you're actually in at your chosen temperature, on a whole-home (single-zone) HVAC system.
 
