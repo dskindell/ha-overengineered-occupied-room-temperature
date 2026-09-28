@@ -4,6 +4,8 @@ A [Home Assistant](https://www.home-assistant.io/) custom integration that keeps
 
 OORT watches who and what is in each of your rooms and blends their temperature sensors into one occupancy-weighted number, which you point your thermostat's "current temperature" at instead of a single fixed sensor. It's the same idea as ecobee's "Follow Me" feature, but works with any thermostat that can take an external temperature sensor as its input — not just ecobee hardware.
 
+![A tracked person moves from the office (69°) through the kitchen and living room to the bedroom (66°). OORT's temperature follows them, while a thermostat on the living-room wall reads 72° throughout.](docs/images/oort-demo.gif)
+
 OORT doesn't talk to any hardware itself. It reads sensors and template results you already have, and produces new sensors for your thermostat to use.
 
 > **Status:** this integration is functional and tested, but has not yet had a production install verified by its author. Expect rough edges, and please open an issue if you find one.
