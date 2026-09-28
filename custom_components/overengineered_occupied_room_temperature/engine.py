@@ -204,17 +204,17 @@ def step_room(
     config: RoomConfig,
     now: float,
     *,
-    hold: bool = False,
+    grace: bool = False,
 ) -> RoomState:
     """Advance a room to ``now`` and apply its latest inputs.
 
     Smoothing is piecewise: the time since the last update is applied toward the
     target that was in effect during that time, and only then is the new target
-    chosen. ``hold`` (the startup grace period) freezes the weight but still
+    chosen. ``grace`` (the startup grace period) freezes the weight but still
     tracks inputs, status and dropouts.
     """
     elapsed = 0.0
-    if not hold and state.last_update is not None:
+    if not grace and state.last_update is not None:
         elapsed = max(0.0, now - state.last_update)
     weight = approach(state.weight, state.target, state.tau, elapsed)
 
@@ -250,7 +250,7 @@ def step_room(
         rising=weight < target,
     )
     tau = getattr(config.taus, tau_name)
-    if tau <= 0 and not hold:
+    if tau <= 0 and not grace:
         # A tau of 0 means instantly: reach the new target now, not at the next update.
         weight = target
     return RoomState(
@@ -377,7 +377,7 @@ def step_zone(
     rooms: Mapping[str, tuple[RoomState, RoomInputs, RoomConfig]],
     now: float,
     *,
-    hold: bool = False,
+    grace: bool = False,
 ) -> ZoneStep:
     """Advance every room to ``now`` and compute the zone's weighted temperature.
 
@@ -386,7 +386,7 @@ def step_zone(
     inputs can be replayed through it (e.g. to tune the taus).
     """
     states = {
-        key: step_room(state, inputs, config, now, hold=hold)
+        key: step_room(state, inputs, config, now, grace=grace)
         for key, (state, inputs, config) in rooms.items()
     }
     epsilon = (

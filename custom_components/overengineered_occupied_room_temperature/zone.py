@@ -217,7 +217,7 @@ class ZoneRuntime:
         # The attributes read from each watched entity, besides its state.
         self._read_attributes: dict[str, set[str]] = {}
         # Grace period only while Home Assistant itself is starting.
-        self._hold = hass.state is not CoreState.running
+        self._grace = hass.state is not CoreState.running
         self._listeners: list[Callable[[], None]] = []
 
     def _template(self, value: str | None) -> Template | None:
@@ -329,7 +329,7 @@ class ZoneRuntime:
             )
         )
 
-        if self._hold:
+        if self._grace:
             entry.async_on_unload(async_at_started(self.hass, self._async_start_grace))
 
         self._async_update_repairs()
@@ -343,7 +343,7 @@ class ZoneRuntime:
 
     @callback
     def _async_end_grace(self, _now: datetime) -> None:
-        self._hold = False
+        self._grace = False
         self.async_update()
 
     @callback
@@ -526,7 +526,7 @@ class ZoneRuntime:
             room.people = people_by_area.get(area_id, [])
             zone[area_id] = (room.state, self._room_inputs(room), room.config)
 
-        step = step_zone(zone, dt_util.utcnow().timestamp(), hold=self._hold)
+        step = step_zone(zone, dt_util.utcnow().timestamp(), grace=self._grace)
         self.result = step.result
         for area_id, room in self.rooms.items():
             room.state = step.rooms[area_id]

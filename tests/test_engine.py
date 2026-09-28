@@ -271,9 +271,9 @@ class TestStepRoom:
         state = step_room(state, inputs(open=True, person=True), CONFIG, MINUTE)
         assert state.weight == pytest.approx(math.exp(-1))  # open tau = 1 min
 
-    def test_hold_freezes_weight_but_tracks_status(self) -> None:
+    def test_grace_freezes_weight_but_tracks_status(self) -> None:
         state = RoomState(weight=0.5, target=0.5, tau=10.0, last_update=0.0)
-        state = step_room(state, inputs(person=True), CONFIG, 10 * MINUTE, hold=True)
+        state = step_room(state, inputs(person=True), CONFIG, 10 * MINUTE, grace=True)
         assert state.weight == 0.5
         assert state.status is Status.PERSON
         assert state.last_update == 10 * MINUTE
@@ -388,8 +388,10 @@ class TestZeroTauIsInstant:
         state = step_room(self.PERSON, inputs(person=True, temperature=None), self.INSTANT, 0.0)
         assert (state.weight, state.tau_name) == (0.0, TauName.DROPOUT)
 
-    def test_grace_hold_still_freezes_the_weight(self) -> None:
-        state = step_room(self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0, hold=True)
+    def test_grace_still_freezes_the_weight(self) -> None:
+        state = step_room(
+            self.PERSON, inputs(open=True, person=True), self.INSTANT, 0.0, grace=True
+        )
         assert state.weight == 1.0
 
     def test_positive_tau_still_starts_from_the_current_weight(self) -> None:
@@ -599,9 +601,9 @@ class TestStepZone:
         step = step_zone({"a": closed, "b": opened}, 0.0)
         assert step.result.temperature == pytest.approx(20.0)
 
-    def test_hold_freezes_weights(self) -> None:
+    def test_grace_freezes_weights(self) -> None:
         state = RoomState(weight=0.4, target=0.4, tau=3.0, last_update=0.0)
-        step = step_zone({"a": (state, inputs(person=True), CONFIG)}, 10 * MINUTE, hold=True)
+        step = step_zone({"a": (state, inputs(person=True), CONFIG)}, 10 * MINUTE, grace=True)
         assert step.rooms["a"].weight == 0.4
 
     def test_no_rooms(self) -> None:

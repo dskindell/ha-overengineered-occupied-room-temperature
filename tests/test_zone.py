@@ -1619,7 +1619,7 @@ async def test_grace_lasts_two_minutes_and_held_time_is_not_counted(
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(expected, abs=5e-5)
 
 
-async def test_reload_during_grace_releases_the_hold(
+async def test_reload_during_grace_ends_the_grace(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, caplog: pytest.LogCaptureFixture
 ) -> None:
     hass.set_state(CoreState.not_running)
