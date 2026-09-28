@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import logging
 import math
@@ -30,6 +30,7 @@ from homeassistant.helpers.event import (
     TrackTemplate,
     TrackTemplateResult,
     async_call_later,
+    async_track_point_in_utc_time,
     async_track_state_change_event,
     async_track_template_result,
     async_track_time_interval,
@@ -120,6 +121,10 @@ class Room:
     config: RoomConfig
     state: RoomState = field(default_factory=RoomState)
     people: list[str] = field(default_factory=list)
+    """The people in the room now."""
+    shown_people: list[str] = field(default_factory=list)
+    """The people the weight sensor shows: those in the room while a person counts as
+    present, or the last ones seen while their exit is delayed."""
     attributes: dict[str, Any] = field(default_factory=dict)
     """What the room's weight sensor shows besides the weight, as of the last update."""
     write_pending: bool = True
@@ -161,9 +166,9 @@ def room_attributes(room: Room) -> dict[str, Any]:
         "open": inputs.open if inputs else None,
         "temperature_available": inputs.temperature is not None if inputs else None,
         "temperature_stale": state.stale,
-        "person_present": inputs.person_present if inputs else None,
-        "occupied": inputs.occupied if inputs else None,
-        "people": room.people,
+        "person_present": state.person_present,
+        "occupied": state.occupied,
+        "people": room.shown_people,
         "target_weight": state.target,
         "tau": state.tau,
         "tau_name": state.tau_name.value if state.tau_name else None,
@@ -218,6 +223,8 @@ class ZoneRuntime:
         self._read_attributes: dict[str, set[str]] = {}
         # Grace period only while Home Assistant itself is starting.
         self._grace = hass.state is not CoreState.running
+        self._started = False
+        self._cancel_deadline: Callable[[], None] | None = None
         self._listeners: list[Callable[[], None]] = []
 
     def _template(self, value: str | None) -> Template | None:
@@ -332,8 +339,30 @@ class ZoneRuntime:
         if self._grace:
             entry.async_on_unload(async_at_started(self.hass, self._async_start_grace))
 
+        self._started = True
+        entry.async_on_unload(self._async_cancel_deadline)
         self._async_update_repairs()
         self.async_update()
+
+    @callback
+    def _async_cancel_deadline(self) -> None:
+        if self._cancel_deadline is not None:
+            self._cancel_deadline()
+            self._cancel_deadline = None
+
+    @callback
+    def _async_schedule_deadline(self, deadline: float | None) -> None:
+        """Update when a delayed presence change will count, so it counts on time."""
+        self._async_cancel_deadline()
+        if deadline is not None and self._started:
+            self._cancel_deadline = async_track_point_in_utc_time(
+                self.hass, self._async_on_deadline, datetime.fromtimestamp(deadline, UTC)
+            )
+
+    @callback
+    def _async_on_deadline(self, _now: datetime) -> None:
+        self._cancel_deadline = None
+        self.async_update(write_everything=False)
 
     @callback
     def _async_start_grace(self, _hass: HomeAssistant) -> None:
@@ -530,10 +559,15 @@ class ZoneRuntime:
         self.result = step.result
         for area_id, room in self.rooms.items():
             room.state = step.rooms[area_id]
+            if not room.state.person_present:
+                room.shown_people = []
+            elif room.people:
+                room.shown_people = room.people
             attributes = room_attributes(room)
             room.write_pending = write_everything or attributes != room.attributes
             room.attributes = attributes
         self.any_room_written = any(room.write_pending for room in self.rooms.values())
+        self._async_schedule_deadline(step.next_deadline)
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's
             # DataUpdateCoordinator does).

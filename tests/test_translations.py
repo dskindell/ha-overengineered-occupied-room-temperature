@@ -141,5 +141,5 @@ def test_minute_settings_show_their_unit() -> None:
         for key, value in schema.schema.items()
         if not isinstance(value, section)
     }
-    minutes = [s.key for s in SETTINGS if s.key.startswith(("tau_", "stale_"))]
+    minutes = [s.key for s in SETTINGS if s.key.startswith(("tau_", "delay_", "stale_"))]
     assert units == {s.key: "min" if s.key in minutes else None for s in SETTINGS}

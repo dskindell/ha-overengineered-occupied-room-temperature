@@ -23,7 +23,7 @@
       },
       "defaults": {
         "title": "Settings",
-        "description": "**Room defaults** are used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+        "description": "**Room defaults** are used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. A **delay** is how many minutes someone must stay in a room (enter delay) or stay away (exit delay) before the room acts on it. **Weights** say how much each room counts.",
         "data": {
           "tau_person_rise": "Person rise tau",
           "tau_person_fall": "Person fall tau",
@@ -31,6 +31,10 @@
           "tau_occupancy_fall": "Occupancy fall tau",
           "tau_open": "Open tau",
           "tau_dropout": "Sensor dropout tau",
+          "delay_person_enter": "Person enter delay",
+          "delay_person_exit": "Person exit delay",
+          "delay_occupancy_enter": "Occupancy enter delay",
+          "delay_occupancy_exit": "Occupancy exit delay",
           "w_person": "Person weight",
           "w_occupied": "Occupied weight",
           "w_base": "Unoccupied weight"
@@ -42,6 +46,10 @@
           "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Default {tau_occupancy_fall_default}.",
           "tau_open": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Default {tau_open_default}.",
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default {tau_dropout_default}.",
+          "delay_person_enter": "Minutes a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. 0 = at once. Default {delay_person_enter_default}.",
+          "delay_person_exit": "Minutes a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. 0 = at once. Default {delay_person_exit_default}.",
+          "delay_occupancy_enter": "Minutes an occupancy sensor or template must stay on before the room counts as occupied. 0 = at once. Default {delay_occupancy_enter_default}.",
+          "delay_occupancy_exit": "Minutes the room keeps counting as occupied after its occupancy sensors and template go off. 0 = at once. Default {delay_occupancy_exit_default}.",
           "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Default {w_person_default}.",
           "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Default {w_occupied_default}.",
           "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least {w_base_minimum}. Default {w_base_default}."
@@ -91,7 +99,7 @@
         "sections": {
           "overrides": {
             "name": "Overrides",
-            "description": "Change this room's taus or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+            "description": "Change this room's taus, delays or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. A **delay** is how many minutes someone must stay in a room (enter delay) or stay away (exit delay) before the room acts on it. **Weights** say how much each room counts.",
             "data": {
               "tau_person_rise": "Person rise tau",
               "tau_person_fall": "Person fall tau",
@@ -99,6 +107,10 @@
               "tau_occupancy_fall": "Occupancy fall tau",
               "tau_open": "Open tau",
               "tau_dropout": "Sensor dropout tau",
+              "delay_person_enter": "Person enter delay",
+              "delay_person_exit": "Person exit delay",
+              "delay_occupancy_enter": "Occupancy enter delay",
+              "delay_occupancy_exit": "Occupancy exit delay",
               "w_person": "Person weight",
               "w_occupied": "Occupied weight",
               "w_base": "Unoccupied weight"
@@ -110,6 +122,10 @@
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_open": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
+              "delay_person_enter": "Minutes a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. 0 = at once. Leave blank to use the zone's default.",
+              "delay_person_exit": "Minutes a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_enter": "Minutes an occupancy sensor or template must stay on before the room counts as occupied. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_exit": "Minutes the room keeps counting as occupied after its occupancy sensors and template go off. 0 = at once. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
               "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least {w_base_minimum}. Leave blank to use the zone's default."
@@ -139,7 +155,7 @@
         "sections": {
           "overrides": {
             "name": "Overrides",
-            "description": "Change this room's taus or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+            "description": "Change this room's taus, delays or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. A **delay** is how many minutes someone must stay in a room (enter delay) or stay away (exit delay) before the room acts on it. **Weights** say how much each room counts.",
             "data": {
               "tau_person_rise": "Person rise tau",
               "tau_person_fall": "Person fall tau",
@@ -147,6 +163,10 @@
               "tau_occupancy_fall": "Occupancy fall tau",
               "tau_open": "Open tau",
               "tau_dropout": "Sensor dropout tau",
+              "delay_person_enter": "Person enter delay",
+              "delay_person_exit": "Person exit delay",
+              "delay_occupancy_enter": "Occupancy enter delay",
+              "delay_occupancy_exit": "Occupancy exit delay",
               "w_person": "Person weight",
               "w_occupied": "Occupied weight",
               "w_base": "Unoccupied weight"
@@ -158,6 +178,10 @@
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_open": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
+              "delay_person_enter": "Minutes a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. 0 = at once. Leave blank to use the zone's default.",
+              "delay_person_exit": "Minutes a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_enter": "Minutes an occupancy sensor or template must stay on before the room counts as occupied. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_exit": "Minutes the room keeps counting as occupied after its occupancy sensors and template go off. 0 = at once. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
               "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least {w_base_minimum}. Leave blank to use the zone's default."
@@ -217,6 +241,8 @@
       "base_weight_too_small": "The unoccupied weight must be at least {w_base_minimum}.",
       "value_not_finite": "Enter a number (not NaN or infinity).",
       "tau_too_large": "Taus can be at most {tau_person_rise_maximum} minutes.",
+      "delay_negative": "Delays can't be negative.",
+      "delay_too_large": "Delays can be at most {delay_person_enter_maximum} minutes.",
       "weight_too_large": "Weights can be at most {w_person_maximum}.",
       "stale_limit_too_large": "The stale temperature limit can be at most {stale_limit_maximum} minutes."
     },
@@ -238,7 +264,7 @@
       },
       "defaults": {
         "title": "Settings",
-        "description": "**Room defaults** are used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+        "description": "**Room defaults** are used by every room in this zone unless the room overrides them. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. A **delay** is how many minutes someone must stay in a room (enter delay) or stay away (exit delay) before the room acts on it. **Weights** say how much each room counts.",
         "data": {
           "tau_person_rise": "Person rise tau",
           "tau_person_fall": "Person fall tau",
@@ -246,6 +272,10 @@
           "tau_occupancy_fall": "Occupancy fall tau",
           "tau_open": "Open tau",
           "tau_dropout": "Sensor dropout tau",
+          "delay_person_enter": "Person enter delay",
+          "delay_person_exit": "Person exit delay",
+          "delay_occupancy_enter": "Occupancy enter delay",
+          "delay_occupancy_exit": "Occupancy exit delay",
           "w_person": "Person weight",
           "w_occupied": "Occupied weight",
           "w_base": "Unoccupied weight"
@@ -257,6 +287,10 @@
           "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Default {tau_occupancy_fall_default}.",
           "tau_open": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Default {tau_open_default}.",
           "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Default {tau_dropout_default}.",
+          "delay_person_enter": "Minutes a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. 0 = at once. Default {delay_person_enter_default}.",
+          "delay_person_exit": "Minutes a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. 0 = at once. Default {delay_person_exit_default}.",
+          "delay_occupancy_enter": "Minutes an occupancy sensor or template must stay on before the room counts as occupied. 0 = at once. Default {delay_occupancy_enter_default}.",
+          "delay_occupancy_exit": "Minutes the room keeps counting as occupied after its occupancy sensors and template go off. 0 = at once. Default {delay_occupancy_exit_default}.",
           "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Default {w_person_default}.",
           "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Default {w_occupied_default}.",
           "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least {w_base_minimum}. Default {w_base_default}."
@@ -306,7 +340,7 @@
         "sections": {
           "overrides": {
             "name": "Overrides",
-            "description": "Change this room's taus or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+            "description": "Change this room's taus, delays or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. A **delay** is how many minutes someone must stay in a room (enter delay) or stay away (exit delay) before the room acts on it. **Weights** say how much each room counts.",
             "data": {
               "tau_person_rise": "Person rise tau",
               "tau_person_fall": "Person fall tau",
@@ -314,6 +348,10 @@
               "tau_occupancy_fall": "Occupancy fall tau",
               "tau_open": "Open tau",
               "tau_dropout": "Sensor dropout tau",
+              "delay_person_enter": "Person enter delay",
+              "delay_person_exit": "Person exit delay",
+              "delay_occupancy_enter": "Occupancy enter delay",
+              "delay_occupancy_exit": "Occupancy exit delay",
               "w_person": "Person weight",
               "w_occupied": "Occupied weight",
               "w_base": "Unoccupied weight"
@@ -325,6 +363,10 @@
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_open": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
+              "delay_person_enter": "Minutes a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. 0 = at once. Leave blank to use the zone's default.",
+              "delay_person_exit": "Minutes a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_enter": "Minutes an occupancy sensor or template must stay on before the room counts as occupied. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_exit": "Minutes the room keeps counting as occupied after its occupancy sensors and template go off. 0 = at once. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
               "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least {w_base_minimum}. Leave blank to use the zone's default."
@@ -354,7 +396,7 @@
         "sections": {
           "overrides": {
             "name": "Overrides",
-            "description": "Change this room's taus or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. **Weights** say how much each room counts.",
+            "description": "Change this room's taus, delays or weights. A **tau** is a time in minutes: roughly how long a room's weight takes to get two-thirds of the way to its new value. A **delay** is how many minutes someone must stay in a room (enter delay) or stay away (exit delay) before the room acts on it. **Weights** say how much each room counts.",
             "data": {
               "tau_person_rise": "Person rise tau",
               "tau_person_fall": "Person fall tau",
@@ -362,6 +404,10 @@
               "tau_occupancy_fall": "Occupancy fall tau",
               "tau_open": "Open tau",
               "tau_dropout": "Sensor dropout tau",
+              "delay_person_enter": "Person enter delay",
+              "delay_person_exit": "Person exit delay",
+              "delay_occupancy_enter": "Occupancy enter delay",
+              "delay_occupancy_exit": "Occupancy exit delay",
               "w_person": "Person weight",
               "w_occupied": "Occupied weight",
               "w_base": "Unoccupied weight"
@@ -373,6 +419,10 @@
               "tau_occupancy_fall": "Minutes to fall back after occupancy ends. Leave blank to use the zone's default.",
               "tau_open": "Minutes for a room to fade out when it becomes \"open\" (an opening entity turns on or the opening template turns true). 0 = instantly. Leave blank to use the zone's default.",
               "tau_dropout": "Minutes for a room to fade out when its temperature sensor becomes unavailable. 0 = instantly. Leave blank to use the zone's default.",
+              "delay_person_enter": "Minutes a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. 0 = at once. Leave blank to use the zone's default.",
+              "delay_person_exit": "Minutes a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_enter": "Minutes an occupancy sensor or template must stay on before the room counts as occupied. 0 = at once. Leave blank to use the zone's default.",
+              "delay_occupancy_exit": "Minutes the room keeps counting as occupied after its occupancy sensors and template go off. 0 = at once. Leave blank to use the zone's default.",
               "w_person": "How much a room with a tracked person in it counts. Only the ratios between the weights matter. Leave blank to use the zone's default.",
               "w_occupied": "How much an occupied room counts (sensor or template says someone is there, no tracked person). Leave blank to use the zone's default.",
               "w_base": "How much an empty room counts. Keep it tiny so empty rooms barely move the temperature. Must be at least {w_base_minimum}. Leave blank to use the zone's default."
@@ -432,6 +482,8 @@
       "base_weight_too_small": "The unoccupied weight must be at least {w_base_minimum}.",
       "value_not_finite": "Enter a number (not NaN or infinity).",
       "tau_too_large": "Taus can be at most {tau_person_rise_maximum} minutes.",
+      "delay_negative": "Delays can't be negative.",
+      "delay_too_large": "Delays can be at most {delay_person_enter_maximum} minutes.",
       "weight_too_large": "Weights can be at most {w_person_maximum}.",
       "stale_limit_too_large": "The stale temperature limit can be at most {stale_limit_maximum} minutes."
     }

@@ -338,7 +338,10 @@ async def test_room_override_rejects_nan(hass: HomeAssistant) -> None:
         ({"tau_open": 1440.5}, "tau_too_large"),
         ({"w_base": 1.01}, "weight_too_large"),
         ({"stale_limit": 1440.5}, "stale_limit_too_large"),
+        ({"delay_person_exit": 60.5}, "delay_too_large"),
+        ({"delay_occupancy_enter": -0.5}, "delay_negative"),
         ({"tau_open": 1440, "w_base": 1, "stale_limit": 1440}, None),
+        ({"delay_person_enter": 0, "delay_occupancy_exit": 60}, None),
     ],
 )
 def test_settings_limits_also_checked_outside_the_form(

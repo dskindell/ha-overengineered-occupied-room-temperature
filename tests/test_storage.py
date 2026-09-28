@@ -89,10 +89,34 @@ def test_every_saved_field_is_read_back() -> None:
         last_seen=100.0,
         dropout_since=160.0,
         stale=True,
+        person_present=True,
+        person_since=150.0,
+        occupied=False,
+        occupied_since=170.0,
     )
     unset = [f.name for f in fields(RoomState) if getattr(state, f.name) == f.default]
     assert unset == ["last_update", "inputs"], "set every saved field above"
     assert saved_room_state(RoomExtraData(state, "°C").as_dict()) == state
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {},
+        {"person_present": "yes", "person_since": 5.0},
+        {"person_present": 1, "person_since": 5.0},
+    ],
+)
+def test_a_missing_or_bad_delayed_input_is_taken_as_it_comes(change: dict[str, Any]) -> None:
+    state = saved_room_state({**SAVED, **change})
+    assert state is not None
+    assert (state.person_present, state.person_since) == (None, None)
+
+
+def test_a_bad_delay_start_is_dropped() -> None:
+    state = saved_room_state({**SAVED, "occupied": True, "occupied_since": math.nan})
+    assert state is not None
+    assert (state.occupied, state.occupied_since) == (True, None)
 
 
 @pytest.mark.parametrize(

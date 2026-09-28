@@ -4,14 +4,14 @@ This module has no Home Assistant imports so the rules can be unit-tested
 directly. The runtime gathers inputs from Home Assistant, calls these
 functions, and writes the results to entities.
 
-Units: timestamps and elapsed times are in seconds; taus and the stale limit
-are in minutes, matching the configuration.
+Units: timestamps and elapsed times are in seconds; taus, delays and the stale
+limit are in minutes, matching the configuration.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from enum import StrEnum
 import math
 from typing import Final
@@ -70,11 +70,23 @@ class Weights:
 
 
 @dataclass(frozen=True, slots=True)
+class Delays:
+    """Minutes a presence must last (enter) or an absence must last (exit) before the
+    room acts on it; 0 = at once."""
+
+    person_enter: float
+    person_exit: float
+    occupancy_enter: float
+    occupancy_exit: float
+
+
+@dataclass(frozen=True, slots=True)
 class RoomConfig:
     """A room's effective settings: its overrides merged over the zone defaults."""
 
     taus: Taus
     weights: Weights
+    delays: Delays
     stale_limit: float
 
 
@@ -118,8 +130,18 @@ class RoomState:
     last_update: float | None = None
     """When the room was last stepped; None after a restore, so downtime isn't
     applied as elapsed time."""
+    person_present: bool | None = None
+    """Whether a tracked person counts as present, after the enter and exit delays;
+    None until the room first takes its input."""
+    person_since: float | None = None
+    """When the person input started to differ from ``person_present``, if it does."""
+    occupied: bool | None = None
+    """Whether the room counts as occupied, after the delays; None like ``person_present``."""
+    occupied_since: float | None = None
+    """When the occupancy input started to differ from ``occupied``, if it does."""
     inputs: RoomInputs | None = None
-    """The inputs this state was stepped with; None before the first update. Not saved."""
+    """The inputs this state was stepped with, before the delays; None before the
+    first update. Not saved."""
 
     @property
     def usable_temperature(self) -> float | None:
@@ -134,6 +156,42 @@ def approach(weight: float, target: float, tau: float, elapsed: float) -> float:
     if tau <= 0:
         return target
     return target + (weight - target) * math.exp(-elapsed / (tau * 60))
+
+
+def delayed(
+    counted: bool | None,
+    since: float | None,
+    current: bool,
+    enter: float,
+    exit_: float,
+    now: float,
+) -> tuple[bool, float | None]:
+    """Apply the enter or exit delay to one presence input.
+
+    ``counted`` is what the room acts on and ``since`` when ``current`` started to
+    differ from it. Returns the new pair: ``current`` counts once it has lasted the
+    enter delay (if present) or the exit delay (if absent); a change that reverts
+    sooner is forgotten.
+    """
+    if counted is None or current == counted:
+        return current, None
+    since = now if since is None else since
+    if now - since >= (enter if current else exit_) * 60:
+        return current, None
+    return counted, since
+
+
+def pending_deadline(state: RoomState, delays: Delays) -> float | None:
+    """When the earliest delayed change in a stepped room will count, if one is waiting."""
+    deadlines = [
+        since + (exit_ if counted else enter) * 60
+        for counted, since, enter, exit_ in (
+            (state.person_present, state.person_since, delays.person_enter, delays.person_exit),
+            (state.occupied, state.occupied_since, delays.occupancy_enter, delays.occupancy_exit),
+        )
+        if since is not None
+    ]
+    return min(deadlines, default=None)
 
 
 def room_status(inputs: RoomInputs) -> Status:
@@ -236,7 +294,23 @@ def step_room(
             dropout_since = now
         stale = now - dropout_since > config.stale_limit * 60
 
-    status = room_status(inputs)
+    person_present, person_since = delayed(
+        state.person_present,
+        state.person_since,
+        inputs.person_present,
+        config.delays.person_enter,
+        config.delays.person_exit,
+        now,
+    )
+    occupied, occupied_since = delayed(
+        state.occupied,
+        state.occupied_since,
+        inputs.occupied,
+        config.delays.occupancy_enter,
+        config.delays.occupancy_exit,
+        now,
+    )
+    status = room_status(replace(inputs, person_present=person_present, occupied=occupied))
     last_occupied_state = (
         status if status in (Status.PERSON, Status.OCCUPIED) else state.last_occupied_state
     )
@@ -265,6 +339,10 @@ def step_room(
         dropout_since=dropout_since,
         stale=stale,
         last_update=now,
+        person_present=person_present,
+        person_since=person_since,
+        occupied=occupied,
+        occupied_since=occupied_since,
         inputs=inputs,
     )
 
@@ -353,14 +431,15 @@ def aggregate(samples: Iterable[RoomSample], epsilon: float) -> Aggregate:
 def room_config(defaults: Mapping[str, float], overrides: Mapping[str, float]) -> RoomConfig:
     """A room's effective settings: its overrides merged over the zone defaults.
 
-    Setting keys are the field names with a prefix: ``tau_<Taus field>`` and
-    ``w_<Weights field>``; ``stale_limit`` is zone-wide, so it's read from the
-    defaults only.
+    Setting keys are the field names with a prefix: ``tau_<Taus field>``,
+    ``w_<Weights field>`` and ``delay_<Delays field>``; ``stale_limit`` is
+    zone-wide, so it's read from the defaults only.
     """
     values = {**defaults, **overrides}
     return RoomConfig(
         taus=Taus(**{f.name: values[f"tau_{f.name}"] for f in fields(Taus)}),
         weights=Weights(**{f.name: values[f"w_{f.name}"] for f in fields(Weights)}),
+        delays=Delays(**{f.name: values[f"delay_{f.name}"] for f in fields(Delays)}),
         stale_limit=defaults["stale_limit"],
     )
 
@@ -371,6 +450,8 @@ class ZoneStep:
 
     rooms: dict[str, RoomState]
     result: Aggregate
+    next_deadline: float | None = None
+    """When the earliest delayed presence change will count, if one is waiting."""
 
 
 def step_zone(
@@ -393,4 +474,9 @@ def step_zone(
         fallback_epsilon(config.weights.base for _, _, config in rooms.values()) if rooms else 0.0
     )
     result = aggregate(map(RoomSample.of, states.values()), epsilon)
-    return ZoneStep(states, result)
+    deadlines = [
+        deadline
+        for key, (_, _, config) in rooms.items()
+        if (deadline := pending_deadline(states[key], config.delays)) is not None
+    ]
+    return ZoneStep(states, result, min(deadlines, default=None))

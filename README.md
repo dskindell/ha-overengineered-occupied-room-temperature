@@ -47,6 +47,8 @@ The first matching status applies, in the order `open`, `dropout`, `person`, `oc
 
 The weight doesn't jump straight to its target — it moves there exponentially, over a configurable time constant (a "tau", in minutes) that's different for rising into a status and falling out of it. This smooths out someone briefly walking through a room, or a motion sensor's usual on/off flicker.
 
+Optional **delays** go further. With an **enter delay**, a room ignores a person (or occupancy) until they've been there that long, so passing through — or a room-presence sensor briefly flipping someone into the room — doesn't count at all. With an **exit delay**, it keeps counting them for that long after they leave, which rides out a location that briefly flips away. Delays are off (`0`) by default.
+
 Every minute (and on every relevant state change), OORT recomputes each room's weight and combines all the rooms into one number:
 
 ```
@@ -115,12 +117,18 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
 | Open tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
 | Sensor dropout tau | How fast a room fades out when its temperature sensor becomes unavailable. `0` = instantly. | 5 |
+| Person enter delay | How long a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. `0` = at once. | 0 |
+| Person exit delay | How long a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. `0` = at once. | 0 |
+| Occupancy enter delay | How long an occupancy sensor or template must stay on before the room counts as occupied. `0` = at once. | 0 |
+| Occupancy exit delay | How long the room keeps counting as occupied after its occupancy sensors and template go off. `0` = at once. | 0 |
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
 | Unoccupied weight | Target weight otherwise. Must be at least 0.001. | 0.001 |
 | Stale temperature limit | How long a room's last reading keeps being used after its temperature sensor was last seen working, before the room is left out. The default covers a normal restart or integration reload (sensors are usually back within seconds to a few minutes); after a longer downtime the saved readings are already stale. In the **Zone** section; rooms can't override it. | 5 |
 
-Validation: person and occupancy taus must be greater than 0; open and dropout taus can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), weights at most 1.
+Validation: person and occupancy taus must be greater than 0; open and dropout taus and delays can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), delays at most 60 minutes, weights at most 1.
+
+A delay is timed from when the change starts; a change that reverts before its delay is up is forgotten, and the next one starts its own delay. Delays apply to the room, not to each person: a person enter delay is how long the room must have *someone* in it without a break, so if one person walks in just before another leaves, the wait carries on from the first arrival — and people coming and going with gaps in between never count. Delays carry on across a restart. A delay and the tau add up: a person with a 1-minute enter delay starts pulling the weight up after that minute, at the person rise tau; with a 2-minute exit delay, the weight starts falling 2 minutes after they leave, at the person fall tau.
 
 ### Tuning the taus
 
@@ -160,8 +168,9 @@ Rules of thumb:
 - **Person fall** and **occupancy fall**: raise them to keep a room counted through short trips out, or through gaps in a motion sensor that goes off while you sit still. Lower them if the temperature keeps following a room you have left.
 - **Open**: keep it short. An open window soon makes the room's reading misleading.
 - **Dropout**: long enough to ride out a sensor briefly going offline, short enough that a dead sensor isn't trusted for long. Its last reading is dropped anyway once the stale limit passes.
+- **Delays**: use a delay rather than a longer tau when short events shouldn't count at all. A person enter delay of about a minute ignores walk-throughs; a person exit delay of a minute or two covers a room-presence sensor that flips people between rooms. An occupancy exit delay is usually unnecessary if the motion sensor already holds itself on for a while.
 
-Taus can be set for the whole zone on the **Settings** screen, or for one room under its **Overrides**, for example a longer occupancy fall tau for a room with a twitchy motion sensor.
+Taus and delays can be set for the whole zone on the **Settings** screen, or for one room under its **Overrides**, for example a longer occupancy fall tau for a room with a twitchy motion sensor.
 
 ### Rooms
 
@@ -175,7 +184,7 @@ Taus can be set for the whole zone on the **Settings** screen, or for one room u
 | Occupancy template | When true, the room also counts as occupied. |
 | Opening entities | Any number of `binary_sensor` or `input_boolean` entities, like window or door contacts. While any of them is `on`, the room is left out and its weight fades to 0 (the `open` status). `unavailable` or `unknown` counts as closed. |
 | Opening template | When it renders true, the room is also left out. True means `true`, `on`, `yes`, `enable`, or any number other than `0` — Home Assistant's usual rule, so a template that returns a number (a temperature, a count) by mistake keeps the room out. Anything else — including `unavailable`, `unknown` or a template error — counts as false. Errors, and results that aren't a recognisable true/false, are logged. Leave both opening fields blank to always count the room. |
-| Overrides (collapsed) | Any of the taus and weights above, for this room only. Leave a field blank to use the zone's default. |
+| Overrides (collapsed) | Any of the taus, delays and weights above, for this room only. Leave a field blank to use the zone's default. |
 | Remove this room | Only when editing: removes the room when you submit. |
 
 If you save a room with no occupancy sensors and no occupancy template while the zone has no people yet, a note says the room can never count as occupied. Continue to save it anyway — for example if you're about to add people.
@@ -209,9 +218,9 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `open` | `true` while an opening entity is on or the opening template is true; otherwise `false`. |
 | `temperature_available` | Whether the room's temperature sensor currently has a usable reading. |
 | `temperature_stale` | `true` once the temperature sensor hasn't had a usable reading for longer than the stale limit (counted from when it was last seen working, so this can be `true` straight after a long downtime) — see [Fallback and stale sensors](#fallback-and-stale-sensors). |
-| `person_present` | Whether any tracked person currently resolves to this room. |
-| `occupied` | The combined result of the room's occupancy sensors and occupancy template. |
-| `people` | List of the names of people currently present in this room. |
+| `person_present` | Whether a tracked person counts as present in this room, after the person enter and exit delays. |
+| `occupied` | The combined result of the room's occupancy sensors and occupancy template, after the occupancy enter and exit delays. |
+| `people` | The names of the people in this room while `person_present` is `true` — while an exit is delayed, the people last seen here. Empty otherwise. |
 | `target_weight` | The weight this room is currently moving toward. |
 | `tau` | The time constant (minutes) currently used to move toward `target_weight`. |
 | `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `open` or `dropout` — so you can see both the direction and the reason. |
