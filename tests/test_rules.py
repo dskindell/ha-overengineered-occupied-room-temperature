@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -69,3 +70,25 @@ def test_message_file_rejects_a_bad_subject(tmp_path: Path) -> None:
     message = tmp_path / "COMMIT_EDITMSG"
     message.write_text("Added some stuff\n")
     assert rules.message_file_problems(message)
+
+
+def test_merge_commits_are_not_checked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-b", "main")
+    git("commit", "--allow-empty", "-m", "chore: start")
+    git("checkout", "-b", "topic")
+    git("commit", "--allow-empty", "-m", "feat: add a thing")
+    git("checkout", "main")
+    git("commit", "--allow-empty", "-m", "fix: something else")
+    git("merge", "--no-ff", "topic", "-m", "Merge pull request 'feat: add a thing' (#1)")
+    monkeypatch.chdir(tmp_path)
+    assert rules.commit_problems("HEAD~1..HEAD") == []
+    git("commit", "--allow-empty", "-m", "not conventional")
+    assert len(rules.commit_problems("HEAD~1..HEAD")) == 1
