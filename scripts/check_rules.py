@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 
-REFERENCE_PATHS = ("custom_components", "tests", "README.md")
+REFERENCE_PATHS = ("custom_components", "tests", "README.md", "CONTRIBUTING.md")
 # Holds sample references on purpose.
 REFERENCE_EXEMPT = ("tests/test_rules.py",)
 REFERENCE = re.compile(r"\([DRF]\d+[^)]*\)|\b[DR]\d{1,3}\b|\breview [A-Z]\d+\b")

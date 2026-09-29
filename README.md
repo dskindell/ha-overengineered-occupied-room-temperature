@@ -2,19 +2,39 @@
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration that keeps the rooms you're actually in at your chosen temperature, on a whole-home (single-zone) HVAC system.
 
-OORT watches who and what is in each of your rooms and blends their temperature sensors into one occupancy-weighted number, which you point your thermostat's "current temperature" at instead of a single fixed sensor. It's the same idea as ecobee's "Follow Me" feature, but works with any thermostat that can take an external temperature sensor as its input — not just ecobee hardware.
+OORT watches who and what is in each of your rooms and blends their temperature sensors into one occupancy-weighted number, which you point your thermostat's "current temperature" at instead of a single fixed sensor. It works with any thermostat that can take an external temperature sensor as its input.
 
 ![A tracked person moves from the office (69°) through the kitchen and living room to the bedroom (66°). OORT's temperature follows them, while a thermostat on the living-room wall reads 72° throughout.](docs/images/oort-demo.gif)
 
 OORT doesn't talk to any hardware itself. It reads sensors and template results you already have, and produces new sensors for your thermostat to use.
 
-> **Status:** this integration is functional and tested, but has not yet had a production install verified by its author. Expect rough edges, and please open an issue if you find one.
+## Why OORT?
+
+I live in a split-level house whose lower floor is partly underground. A furnace heats every room, but the air conditioning we added later only reaches upstairs. Here in the Pacific Northwest there was no practical way to run a return duct from upstairs down to the furnace for one shared system. Each has its own thermostat, and a single thermostat in Home Assistant drives both.
+
+Even before the AC, rooms could be 5–10 °F apart, so wherever the temperature was measured, someone was uncomfortable. Remote room sensors didn't solve it. With my wife in the cool downstairs and me in my warm upstairs office, the average suited neither of us. When one of us changed floors, the thermostat was slow to notice, then overcorrected once the room it had been favouring finally dropped out.
+
+Motion sensors brought their own problem: our dogs and cats. Hold each room's occupancy for a long time after motion stops, and the pets kept nearly every room in the average. Shorten the hold, and the HVAC flapped between heating and cooling, overcorrecting each time.
+
+So I built my own out of template sensors and automations, weighting each room by who was in it and using my own temperature and occupancy sensors. Years of tweaking left it far more complicated than it needed to be, and painful to test: every change meant restarting Home Assistant, then waiting to see what happened.
+
+OORT is that logic rebuilt as a proper integration. A tracked person counts for more than a motion sensor, each room fades in and out at its own pace, and short visits can be ignored altogether. It's configured in the UI, covered by tests and tunable per room. The name admits the rest.
 
 ## Table of contents
 
-- [How it works](#how-it-works)
+- [Why OORT?](#why-oort)
+
+**Getting started**
+
 - [Is this for me?](#is-this-for-me)
 - [Installation](#installation)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Pointing your thermostat at OORT](#pointing-your-thermostat-at-oort)
+- [Examples](#examples)
+
+**Reference**
+
 - [Configuration](#configuration)
   - [Create a zone](#create-a-zone)
   - [Change a zone later](#change-a-zone-later)
@@ -23,13 +43,43 @@ OORT doesn't talk to any hardware itself. It reads sensors and template results 
   - [Rooms](#rooms)
   - [People](#people)
 - [Entities](#entities)
+- [Data updates](#data-updates)
 - [Fallback and stale sensors](#fallback-and-stale-sensors)
 - [Startup grace period](#startup-grace-period)
-- [Pointing your thermostat at OORT](#pointing-your-thermostat-at-oort)
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
-- [Development](#development)
+- [Removing the integration](#removing-the-integration)
+- [Contributing](#contributing)
 - [License](#license)
+
+## Is this for me?
+
+- You have **one whole-home HVAC system** (a single zone) and want it to prioritize the rooms people are actually using, rather than a single fixed thermostat location.
+- Your thermostat entity (or the climate integration that drives it) can be configured to use an **external sensor as its current temperature** — for example Home Assistant's [Generic Thermostat](https://www.home-assistant.io/integrations/generic_thermostat/), a `dual_smart_thermostat`, or any similar `climate` integration with a "target sensor" / "current temperature sensor" option. OORT doesn't control climate entities directly; it only produces a temperature sensor for you to wire in yourself.
+- You have (or are willing to set up) a temperature sensor per room, and some way to detect occupancy per room — motion/occupancy sensors, input booleans, templates, or per-person room-location sensors (anything whose state or an attribute is the name or ID of the Home Assistant area the person is in, such as a room-presence integration or a template sensor). A `person` or `device_tracker` entity on its own isn't enough: its state is a zone, not an area.
+- You run **Home Assistant 2026.9 or later**. Tests run against 2026.9.3.
+
+## Installation
+
+There's no HACS listing yet (planned for later). Install manually:
+
+1. Copy the `custom_components/overengineered_occupied_room_temperature` folder from this repository into your Home Assistant config's `custom_components/` directory, so you end up with `<config>/custom_components/overengineered_occupied_room_temperature/`.
+2. Restart Home Assistant.
+
+Then follow the [Quick start](#quick-start).
+
+## Quick start
+
+1. [Install OORT](#installation).
+2. Go to **Settings → Devices & services → Add integration**, choose **Overengineered Occupied-Room Temperature**, and name the zone, for example "Home". Or use this button, which opens it in your own Home Assistant:
+
+   [![Open your Home Assistant instance and start setting up OORT.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=overengineered_occupied_room_temperature)
+3. In the zone menu, choose **Rooms**, then **Add a new room**. Pick the room's area, its temperature sensor, and its motion or occupancy sensors, and submit. Repeat for each room the HVAC serves, then choose **Done**.
+4. Optional: choose **People** and add each person whose room you can track, using an entity whose state (or an attribute) is the area they're in. With the default settings, a tracked person counts twice as much as an occupancy sensor.
+5. Choose **Finish**. The default settings suit most homes.
+6. [Point your thermostat](#pointing-your-thermostat-at-oort) at `sensor.oort_home_temperature`. You can leave the thermostat as it is for a day or two first and compare the new sensor with your current reading.
+
+Each room gets a `sensor.oort_home_<room>_weight` sensor whose attributes show why it has the weight it has (see [Entities](#entities)). If the temperature follows you too eagerly or too slowly, see [Tuning the taus](#tuning-the-taus).
 
 ## How it works
 
@@ -49,30 +99,64 @@ The weight doesn't jump straight to its target — it moves there exponentially,
 
 Optional **delays** go further. With an **enter delay**, a room ignores a person (or occupancy) until they've been there that long, so passing through — or a room-presence sensor briefly flipping someone into the room — doesn't count at all. With an **exit delay**, it keeps counting them for that long after they leave, which rides out a location that briefly flips away. Delays are off (`0`) by default.
 
-Every minute (and on every relevant state change), OORT recomputes each room's weight and combines all the rooms into one number:
+Every minute, and whenever something relevant changes, OORT recomputes each room's weight and averages the rooms' temperatures, each counting in proportion to its weight. That average is the zone's `Temperature` sensor, which your thermostat reads. The exact formula is under [Fallback and stale sensors](#fallback-and-stale-sensors).
 
+## Pointing your thermostat at OORT
+
+Wire the `Temperature` sensor into whatever climate integration is driving your HVAC. For example, with Home Assistant's built-in [Generic Thermostat](https://www.home-assistant.io/integrations/generic_thermostat/) (`configuration.yaml`):
+
+```yaml
+climate:
+  - platform: generic_thermostat
+    name: House
+    heater: switch.hvac_heater
+    target_sensor: sensor.oort_home_temperature
 ```
-temperature = Σ(room_weight × room_temperature) + ε × fallback_average
-              ──────────────────────────────────────────────────────
-              Σ(room_weight) + ε
+
+Any other climate integration with an equivalent "current/target temperature sensor" option — including UI-configured ones — works the same way: point that option at your zone's `sensor.oort_<zone>_temperature`.
+
+## Examples
+
+Each of these is set on a room's form (**Configure → Rooms**, then the room), with times and weights under its **Overrides**, or on the **Settings** screen for every room at once.
+
+### Pets tripping motion sensors
+
+A dog or cat wandering through sets off a room's motion sensor for a minute or two, and without a fix, that room joins the average each time.
+
+- Give the room an **occupancy enter delay** a little longer than the time the motion sensor stays on after one trigger. If the sensor stays on for 2 minutes, a delay of 3 minutes ignores a pet passing through. Someone who stays and moves about keeps the sensor on, so the room counts after 3 minutes. The delay starts again after every gap, so it suits sensors that stay on for a while after each trigger.
+- Where you can, add **people**. A tracked person counts for more than motion (by default 1.0 against 0.5), and lowering the **occupied weight** makes motion-only rooms count for even less.
+
+### Leave a room out while its window is open
+
+An open window makes the room's reading say more about the weather than about the house. Add the window's contact sensor to the room's **opening entities**: while it's on, the room fades out of the average at the open tau (1 minute by default) and comes back once it closes.
+
+### Leave out rooms the AC doesn't reach
+
+If your air conditioning only serves some rooms, leave the others out while cooling with an **opening template** on each of them. With a thermostat entity called `climate.house`:
+
+```jinja
+{{ is_state('climate.house', 'cool') }}
 ```
 
-The small extra term (weight `ε`, fixed at 1% of your smallest room's *unoccupied weight*) is a plain average of the rooms' readings — rooms that aren't open are preferred. It's negligible while any room has a meaningful weight, but it keeps the output sane — rather than undefined — if every room's weight has decayed to (near) zero. See [Fallback and stale sensors](#fallback-and-stale-sensors).
+A climate entity's state is its HVAC mode, so this is true while the system is set to cool. The rooms rejoin when it's set back to heat.
 
-## Is this for me?
+### Count the bedroom once someone has gone to bed
 
-- You have **one whole-home HVAC system** (a single zone) and want it to prioritize the rooms people are actually using, rather than a single fixed thermostat location.
-- Your thermostat entity (or the climate integration that drives it) can be configured to use an **external sensor as its current temperature** — for example Home Assistant's [Generic Thermostat](https://www.home-assistant.io/integrations/generic_thermostat/), a `dual_smart_thermostat`, or any similar `climate` integration with a "target sensor" / "current temperature sensor" option. OORT doesn't control climate entities directly; it only produces a temperature sensor for you to wire in yourself.
-- You have (or are willing to set up) a temperature sensor per room, and some way to detect occupancy per room — motion/occupancy sensors, input booleans, templates, or per-person room-location sensors (anything whose state or an attribute is the name or ID of the Home Assistant area the person is in, such as a room-presence integration or a template sensor). A `person` or `device_tracker` entity on its own isn't enough: its state is a zone, not an area.
-- You run **Home Assistant 2026.9 or later**. Tests run against 2026.9.3.
+Motion sensors see little of people asleep. Give the bedroom an **occupancy template** that's true while someone is in bed, for example with an input boolean your bedtime routine turns on:
 
-## Installation
+```jinja
+{{ is_state('input_boolean.gone_to_bed', 'on') }}
+```
 
-There's no HACS listing yet (planned for later). Install manually:
+Occupancy counts at the **occupied weight**, so raise the bedroom's to 1.0 if it should count as much as a tracked person.
 
-1. Copy the `custom_components/overengineered_occupied_room_temperature` folder from this repository into your Home Assistant config's `custom_components/` directory, so you end up with `<config>/custom_components/overengineered_occupied_room_temperature/`.
-2. Restart Home Assistant.
-3. Go to **Settings → Devices & services → Add integration**, and search for "Overengineered Occupied-Room Temperature".
+### Rooms people walk through
+
+A hallway, or the kitchen on the way to the garage, briefly pulls the temperature toward it every time someone passes. Give that room a **person enter delay** of about a minute (and an **occupancy enter delay** if it has a motion sensor), so it only counts people who stop there.
+
+### A room-presence sensor that flips people between rooms
+
+Room-presence sensors sometimes place someone in the next room for a few seconds. A **person exit delay** of a minute or two on each room keeps counting them where they were, and a **person enter delay** keeps the room they flipped into from counting them.
 
 ## Configuration
 
@@ -209,7 +293,7 @@ Each zone creates one device ("OORT `<zone name>`") containing:
 
 ### `<Room> weight` sensor
 
-Its state is the room's current weight (a number between 0 and the largest of the room's weights), stored to 4 decimal places. It's written straight away when the room's status or inputs change; in between, it's written on the minute timer once the weight has moved at least 0.01 since it was last written, and once more when it reaches its target — not on every temperature reading. So a slowly settling weight can show up to 0.01 away from its exact value until it settles; the zone's temperature always uses the exact weights. Attributes:
+Its state is the room's current weight (a number between 0 and the largest of the room's weights), stored to 4 decimal places (see [Data updates](#data-updates) for when it's written). Attributes:
 
 | Attribute | Meaning |
 |---|---|
@@ -237,11 +321,32 @@ Its state is the zone's occupancy-weighted temperature, rounded to 0.1°, in the
 | `contributing_rooms` | How many rooms are steering the weighted average: they have a valid temperature and a weight that shows as more than 0 (at least 0.00005). An open room drops out of the count once its weight has faded; a new room joins once its weight starts rising. |
 | `fallback` | `true` when the fallback term's weight is more than the total weight of the rooms with a usable reading — see below. |
 
+## Data updates
+
+OORT doesn't poll anything. It recalculates a zone:
+
+- when something it watches changes: a room's temperature, occupancy or opening sensors, the result of one of its templates, or a person's location entity;
+- when an enter or exit delay ends;
+- every minute, so weights keep moving between events.
+
+A recalculation doesn't always write the sensors, which keeps history (and the database) smaller:
+
+- A **`<Room> weight`** sensor is written every minute, and straight away when any of its attributes change, such as its status. A new temperature reading on its own doesn't write it.
+- The **`Temperature`** sensor is written when its rounded value, `contributing_rooms` or `fallback` changes, and whenever a room's weight sensor is written. Its `total_weight` attribute is refreshed with those writes and isn't recorded in history.
+
 ## Fallback and stale sensors
 
 Every room's temperature sensor is read continuously, whether or not the room is open. If a room's sensor becomes unavailable, unknown, or reports a value or unit Home Assistant can't convert to a temperature (including `nan` or `inf`), the room (status `dropout`) keeps using its **last known reading** while its weight fades out at the dropout tau. If the sensor stays unusable for longer than the zone's **stale temperature limit** (counted from when it was last seen working), that room's `temperature_stale` attribute becomes `true` and it's dropped from the average entirely (it still keeps its weight and status, it just no longer contributes a temperature).
 
-The `Temperature` sensor also includes a small **fallback term**: a plain average of room readings, with a fixed weight of 1% of your smallest room's unoccupied weight. It's negligible next to any room with real weight, but it keeps the output sensible — rather than unavailable — while every room is fading toward zero (for example right after startup, or when every room is open).
+The `Temperature` sensor is the rooms' weighted average plus a small **fallback term**:
+
+```
+temperature = Σ(room_weight × room_temperature) + ε × fallback_average
+              ──────────────────────────────────────────────────────
+              Σ(room_weight) + ε
+```
+
+The fallback term is a plain average of room readings, with a fixed weight `ε` of 1% of your smallest room's unoccupied weight. It's negligible next to any room with real weight, but it keeps the output sensible — rather than unavailable — while every room is fading toward zero (for example right after startup, or when every room is open).
 
 The fallback averages the first of these that has any readings:
 
@@ -264,20 +369,6 @@ So during a total sensor outage the thermostat gets the last readings for at mos
 
 When Home Assistant itself is starting, OORT holds every room's weight at whatever it was restored to (or 0, if there's nothing to restore) until **2 minutes** after Home Assistant has finished starting. Reloading or reconfiguring the integration while Home Assistant is already running doesn't start a grace period. Inputs, status and dropout tracking are still updated live during this hold — only the weight itself is frozen — so the very first minutes after a restart don't produce a temperature swung by rooms racing back up from 0.
 
-## Pointing your thermostat at OORT
-
-Wire the `Temperature` sensor into whatever climate integration is driving your HVAC. For example, with Home Assistant's built-in [Generic Thermostat](https://www.home-assistant.io/integrations/generic_thermostat/) (`configuration.yaml`):
-
-```yaml
-climate:
-  - platform: generic_thermostat
-    name: House
-    heater: switch.hvac_heater
-    target_sensor: sensor.oort_home_temperature
-```
-
-Any other climate integration with an equivalent "current/target temperature sensor" option — including UI-configured ones — works the same way: point that option at your zone's `sensor.oort_<zone>_temperature`.
-
 ## Known limitations
 
 - Each zone creates a single device holding all of its room-weight and temperature sensors, rather than one device per room. Room sensors won't appear on their own room's area page in Home Assistant unless you manually assign each `<Room> weight` entity to that area (**Settings → Devices & services → Entities**).
@@ -290,30 +381,15 @@ Any other climate integration with an equivalent "current/target temperature sen
 
 **The `Temperature` sensor is `unavailable`.** Every configured room's temperature sensor is either stale (unavailable for longer than the stale limit) or has never reported a usable value. Check each room's `temperature_available` and `temperature_stale` attributes to find the affected sensor(s).
 
-## Development
+## Removing the integration
 
-Tests run against Home Assistant 2026.9.3 (via `pytest-homeassistant-custom-component`), which needs Python 3.14:
+1. Point your thermostat back at its own temperature sensor first, or it will be left without a current temperature.
+2. Go to **Settings → Devices & services → Overengineered Occupied-Room Temperature**. For each zone, open its ⋮ menu and choose **Delete**. This removes the zone's device and sensors.
+3. Delete the `custom_components/overengineered_occupied_room_temperature` folder from your config and restart Home Assistant.
 
-```sh
-uv venv --python 3.14 .venv
-uv pip install --python .venv/bin/python -r requirements_test.txt
-.venv/bin/python -m pytest
-```
+## Contributing
 
-This runs the tests for the pure-Python weighting/smoothing engine, the config flow, and end-to-end runtime tests against an in-memory Home Assistant.
-
-Lint and format with [ruff](https://docs.astral.sh/ruff/) (settings in `pyproject.toml`):
-
-```sh
-uvx ruff check custom_components tests scripts
-uvx ruff format custom_components tests scripts
-```
-
-To run the same checks as CI before each commit — including the commit-message format ([Conventional Commits](https://www.conventionalcommits.org/)) — install the [pre-commit](https://pre-commit.com/) hooks once:
-
-```sh
-uvx pre-commit install
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setting up a development environment, the checks CI runs, and commit conventions.
 
 ## License
 
