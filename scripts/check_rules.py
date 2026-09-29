@@ -66,8 +66,9 @@ def message_file_problems(path: Path) -> list[str]:
 
 
 def commit_problems(revisions: str) -> list[str]:
+    # Merge commits are written by the forge; the commits they bring in are checked.
     log = subprocess.run(
-        ["git", "log", "--format=%h%x00%B%x01", revisions],
+        ["git", "log", "--no-merges", "--format=%h%x00%B%x01", revisions],
         capture_output=True,
         text=True,
         check=True,
