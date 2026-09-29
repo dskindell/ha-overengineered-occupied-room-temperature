@@ -36,6 +36,10 @@ CONF_TAU_OCCUPANCY_RISE: Final = "tau_occupancy_rise"
 CONF_TAU_OCCUPANCY_FALL: Final = "tau_occupancy_fall"
 CONF_TAU_OPEN: Final = "tau_open"
 CONF_TAU_DROPOUT: Final = "tau_dropout"
+CONF_DELAY_PERSON_ENTER: Final = "delay_person_enter"
+CONF_DELAY_PERSON_EXIT: Final = "delay_person_exit"
+CONF_DELAY_OCCUPANCY_ENTER: Final = "delay_occupancy_enter"
+CONF_DELAY_OCCUPANCY_EXIT: Final = "delay_occupancy_exit"
 CONF_W_PERSON: Final = "w_person"
 CONF_W_OCCUPIED: Final = "w_occupied"
 CONF_W_BASE: Final = "w_base"
@@ -74,6 +78,7 @@ UPDATE_INTERVAL_SECONDS: Final = 60
 # 0-1 loses nothing (with MIN_BASE_WEIGHT that still allows 1000:1).
 MIN_BASE_WEIGHT: Final = 0.001
 MAX_TAU: Final = 1440.0  # minutes (a day)
+MAX_DELAY: Final = 60.0  # minutes
 MAX_WEIGHT: Final = 1.0
 MAX_STALE_LIMIT: Final = 1440.0  # minutes (a day)
 
@@ -82,8 +87,8 @@ MAX_STALE_LIMIT: Final = 1440.0  # minutes (a day)
 class Setting:
     """A numeric zone setting: its default, its limits and the errors for them.
 
-    To add a setting: add it here, to the engine (``engine.Taus``/``Weights`` use
-    the key without its ``tau_``/``w_`` prefix) and to the translations. Zones saved
+    To add a setting: add it here, to the engine (``engine.Taus``/``Weights``/``Delays``
+    use the key without its ``tau_``/``w_``/``delay_`` prefix) and to the translations. Zones saved
     without it get the default when they load, so they needn't be recreated.
     """
 
@@ -116,6 +121,18 @@ def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
     )
 
 
+def _delay(key: str) -> Setting:
+    return Setting(
+        key=key,
+        default=0.0,
+        minimum=0.0,
+        maximum=MAX_DELAY,
+        too_small="delay_negative",
+        too_large="delay_too_large",
+        unit=UnitOfTime.MINUTES,
+    )
+
+
 def _weight(
     key: str, default: float, minimum: float = 0.0, too_small: str = "weight_negative"
 ) -> Setting:
@@ -136,6 +153,10 @@ SETTINGS: Final = (
     _tau(CONF_TAU_OCCUPANCY_FALL, 8.0, zero_allowed=False),
     _tau(CONF_TAU_OPEN, 1.0, zero_allowed=True),  # 0 = instant
     _tau(CONF_TAU_DROPOUT, 5.0, zero_allowed=True),
+    _delay(CONF_DELAY_PERSON_ENTER),
+    _delay(CONF_DELAY_PERSON_EXIT),
+    _delay(CONF_DELAY_OCCUPANCY_ENTER),
+    _delay(CONF_DELAY_OCCUPANCY_EXIT),
     _weight(CONF_W_PERSON, 1.0),
     _weight(CONF_W_OCCUPIED, 0.5),
     _weight(CONF_W_BASE, 0.001, MIN_BASE_WEIGHT, "base_weight_too_small"),

@@ -57,6 +57,17 @@ def _number(value: Any) -> float | None:
     return float(value) if is_number and math.isfinite(value) else None
 
 
+def _delayed_input(
+    data: Mapping[str, Any], name: str, since: str
+) -> tuple[bool | None, float | None]:
+    """A presence input after its delays, and when a change to it started; without a
+    valid value the room takes its input as it is, with nothing pending."""
+    counted = data.get(name)
+    if not isinstance(counted, bool):
+        return None, None
+    return counted, _number(data.get(since))
+
+
 def _member[E: StrEnum](kind: type[E], value: Any) -> E | None:
     try:
         return kind(value)
@@ -73,6 +84,8 @@ def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
     if not (0 <= weight <= MAX_WEIGHT and 0 <= target <= MAX_WEIGHT and tau >= 0):
         return None
     last_occupied_state = _member(Status, data.get("last_occupied_state"))
+    person_present, person_since = _delayed_input(data, "person_present", "person_since")
+    occupied, occupied_since = _delayed_input(data, "occupied", "occupied_since")
     return RoomState(
         weight=weight,
         target=target,
@@ -86,4 +99,8 @@ def saved_room_state(data: Mapping[str, Any]) -> RoomState | None:
         last_seen=_number(data.get("last_seen")),
         dropout_since=_number(data.get("dropout_since")),
         stale=data.get("stale") is True,
+        person_present=person_present,
+        person_since=person_since,
+        occupied=occupied,
+        occupied_since=occupied_since,
     )

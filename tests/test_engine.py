@@ -14,6 +14,7 @@ import pytest
 from custom_components.overengineered_occupied_room_temperature import const, engine
 from custom_components.overengineered_occupied_room_temperature.engine import (
     Aggregate,
+    Delays,
     RoomInputs,
     RoomSample,
     RoomState,
@@ -23,6 +24,7 @@ from custom_components.overengineered_occupied_room_temperature.engine import (
     Weights,
     aggregate,
     approach,
+    delayed,
     fallback_epsilon,
     room_config,
     room_status,
@@ -513,6 +515,10 @@ class TestRoomConfig:
         "tau_occupancy_fall": 8.0,
         "tau_open": 1.0,
         "tau_dropout": 5.0,
+        "delay_person_enter": 0.0,
+        "delay_person_exit": 0.0,
+        "delay_occupancy_enter": 0.0,
+        "delay_occupancy_exit": 0.0,
         "w_person": 1.0,
         "w_occupied": 0.5,
         "w_base": 0.001,
@@ -520,9 +526,13 @@ class TestRoomConfig:
     }
 
     def test_overrides_replace_defaults(self) -> None:
-        config = room_config(self.DEFAULTS, {"tau_person_fall": 1.0, "w_occupied": 0.8})
+        config = room_config(
+            self.DEFAULTS,
+            {"tau_person_fall": 1.0, "w_occupied": 0.8, "delay_person_exit": 2.0},
+        )
         assert config.taus == Taus(3.0, 1.0, 10.0, 8.0, 1.0, 5.0)
         assert config.weights == Weights(1.0, 0.8, 0.001)
+        assert config.delays == Delays(0.0, 2.0, 0.0, 0.0)
         assert config.stale_limit == 5.0
 
     def test_stale_limit_is_zone_wide(self) -> None:
@@ -530,9 +540,11 @@ class TestRoomConfig:
 
     def test_setting_keys_match_the_integration(self) -> None:
         """room_config builds keys from field names; they must be the stored keys."""
-        engine_keys = {f"tau_{f.name}" for f in fields(Taus)} | {
-            f"w_{f.name}" for f in fields(Weights)
-        }
+        engine_keys = (
+            {f"tau_{f.name}" for f in fields(Taus)}
+            | {f"w_{f.name}" for f in fields(Weights)}
+            | {f"delay_{f.name}" for f in fields(Delays)}
+        )
         assert engine_keys | {"stale_limit"} == set(const.DEFAULTS)
         assert engine_keys == set(const.ROOM_SETTINGS)
         assert self.DEFAULTS == const.DEFAULTS
@@ -627,3 +639,81 @@ class TestRoomSample:
         assert RoomSample.of(state) == RoomSample(
             weight=0.5, usable=20.0, current=None, closed=True
         )
+
+
+class TestDelays:
+    CONFIG = room_config(
+        {
+            **const.DEFAULTS,
+            "delay_person_enter": 1.0,
+            "delay_person_exit": 2.0,
+            "delay_occupancy_enter": 0.5,
+            "delay_occupancy_exit": 3.0,
+        },
+        {},
+    )
+    EMPTY = step_room(RoomState(), inputs(), CONFIG, 0.0)
+
+    def test_without_a_delay_a_change_counts_at_once(self) -> None:
+        assert delayed(False, None, True, 0.0, 0.0, 10.0) == (True, None)
+        assert delayed(True, None, False, 0.0, 0.0, 10.0) == (False, None)
+
+    def test_entering_counts_once_it_has_lasted_the_enter_delay(self) -> None:
+        assert delayed(False, None, True, 1.0, 5.0, 100.0) == (False, 100.0)
+        assert delayed(False, 100.0, True, 1.0, 5.0, 159.0) == (False, 100.0)
+        assert delayed(False, 100.0, True, 1.0, 5.0, 160.0) == (True, None)
+
+    def test_leaving_waits_for_the_exit_delay(self) -> None:
+        assert delayed(True, 100.0, False, 1.0, 5.0, 160.0) == (True, 100.0)
+        assert delayed(True, 100.0, False, 1.0, 5.0, 400.0) == (False, None)
+
+    def test_a_change_that_reverts_in_time_is_forgotten(self) -> None:
+        assert delayed(False, 100.0, False, 1.0, 5.0, 130.0) == (False, None)
+        assert delayed(True, 100.0, True, 1.0, 5.0, 130.0) == (True, None)
+
+    def test_a_room_takes_its_first_input_as_it_is(self) -> None:
+        assert delayed(None, None, True, 1.0, 5.0, 0.0) == (True, None)
+        state = step_room(RoomState(), inputs(person=True), self.CONFIG, 0.0)
+        assert (state.person_present, state.status) == (True, Status.PERSON)
+
+    def test_a_short_visit_never_counts(self) -> None:
+        state = step_room(self.EMPTY, inputs(person=True), self.CONFIG, 30.0)
+        assert state.status is Status.UNOCCUPIED
+        assert state.inputs == inputs(person=True)  # the raw input is kept
+        state = step_room(state, inputs(), self.CONFIG, 50.0)
+        assert (state.status, state.person_since) == (Status.UNOCCUPIED, None)
+        state = step_room(state, inputs(person=True), self.CONFIG, 70.0)
+        assert state.person_since == 70.0  # a new visit starts its own delay
+
+    def test_a_person_counts_after_the_enter_delay(self) -> None:
+        state = step_room(self.EMPTY, inputs(person=True), self.CONFIG, 30.0)
+        state = step_room(state, inputs(person=True), self.CONFIG, 90.0)
+        assert (state.person_present, state.status) == (True, Status.PERSON)
+        assert state.tau_name is TauName.PERSON_RISE
+
+    def test_a_person_keeps_counting_until_the_exit_delay(self) -> None:
+        state = step_room(RoomState(), inputs(person=True), self.CONFIG, 0.0)
+        state = step_room(state, inputs(), self.CONFIG, 10.0)
+        assert (state.status, state.person_since) == (Status.PERSON, 10.0)
+        state = step_room(state, inputs(), self.CONFIG, 10.0 + 2 * MINUTE)
+        assert (state.status, state.tau_name) == (Status.UNOCCUPIED, TauName.PERSON_FALL)
+
+    def test_occupancy_has_its_own_delays(self) -> None:
+        state = step_room(self.EMPTY, inputs(occupied=True), self.CONFIG, 0.0)
+        assert state.status is Status.UNOCCUPIED
+        state = step_room(state, inputs(occupied=True), self.CONFIG, 30.0)
+        assert state.status is Status.OCCUPIED
+        state = step_room(state, inputs(), self.CONFIG, 60.0)
+        state = step_room(state, inputs(), self.CONFIG, 60.0 + 2 * MINUTE)
+        assert state.status is Status.OCCUPIED  # exit delay 3 min
+
+    def test_the_zone_reports_the_earliest_deadline(self) -> None:
+        present = step_room(RoomState(), inputs(person=True), self.CONFIG, 0.0)
+        rooms = {
+            "a": (self.EMPTY, inputs(person=True), self.CONFIG),
+            "b": (self.EMPTY, inputs(occupied=True), self.CONFIG),
+            "c": (present, inputs(), self.CONFIG),
+        }
+        assert step_zone(rooms, 100.0).next_deadline == 130.0
+        assert step_zone({"c": rooms["c"]}, 100.0).next_deadline == 220.0
+        assert step_zone({"a": (self.EMPTY, inputs(), self.CONFIG)}, 100.0).next_deadline is None
