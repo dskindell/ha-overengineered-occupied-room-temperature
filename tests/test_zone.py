@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import itertools
 import math
 from typing import Any
 from unittest.mock import patch
@@ -1666,22 +1667,24 @@ async def test_changed_settings_take_effect_on_reload_without_a_jump(
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.5 + 0.5 * math.exp(-1), abs=5e-5)
 
 
-async def test_grace_end_writes_every_weight_sensor(
+async def test_a_falling_weight_is_written_in_steps_and_when_it_settles(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    hass.set_state(CoreState.not_running)
     set_temperature(hass, "kitchen", "20")
-    set_temperature(hass, "office", "22")
-    await setup_zone(hass, [room("kitchen"), room("office")])
-    # So the grace end doesn't coincide with the minute timer.
-    await advance(hass, freezer, seconds=30)
-    await start_home_assistant(hass)
-    await advance(hass, freezer, seconds=100)  # 130 s after setup: past the first minute tick
-    reported = {e: hass.states.get(e).last_reported for e in (KITCHEN_WEIGHT, OFFICE_WEIGHT)}
+    hass.states.async_set("binary_sensor.kitchen_motion", "on")
+    motion = {CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}
+    await setup_zone(hass, [room("kitchen", **motion)])
+    await advance(hass, freezer, 60)
+    hass.states.async_set("binary_sensor.kitchen_motion", "off")
+    await hass.async_block_till_done()
+    seen = record_states(hass)
 
-    await advance(hass, freezer, seconds=21)  # grace ends 120 s after start (150 s after setup)
-    for entity_id, before in reported.items():
-        assert hass.states.get(entity_id).last_reported > before, entity_id
+    await advance(hass, freezer, 120)  # occupancy fall: 0.5 → 0.001 takes ~75 minutes
+    written = [float(state.state) for entity_id, state in seen if entity_id == KITCHEN_WEIGHT]
+    assert written[-1] == 0.001  # the settled weight
+    steps = [round(a - b, 4) for a, b in itertools.pairwise(written)]
+    assert all(step >= 0.01 for step in steps[:-1])
+    assert len(written) < 30  # instead of a row every minute until it settles
 
 
 # ---------------------------------------------------------------------------

@@ -69,6 +69,9 @@ GRACE_PERIOD_SECONDS: Final = 120
 # Stored precision: enough for the thermostat and the weights, few enough
 # digits that settled values stop producing new recorder rows.
 WEIGHT_DECIMALS: Final = 4
+# Between status changes, a weight sensor writes once its weight has moved this far
+# since it last wrote, or when it reaches its target.
+WEIGHT_WRITE_STEP: Final = 0.01
 TEMPERATURE_DECIMALS: Final = 1
 UPDATE_INTERVAL_SECONDS: Final = 60
 

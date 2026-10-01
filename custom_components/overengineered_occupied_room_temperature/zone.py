@@ -58,6 +58,8 @@ from .const import (
     GRACE_PERIOD_SECONDS,
     UPDATE_INTERVAL_SECONDS,
     VALUE_TYPE_AREA_ID,
+    WEIGHT_DECIMALS,
+    WEIGHT_WRITE_STEP,
     has_occupancy_source,
     room_configs,
 )
@@ -129,6 +131,16 @@ class Room:
     """What the room's weight sensor shows besides the weight, as of the last update."""
     write_pending: bool = True
     """Whether the room's weight sensor should write its state after this update."""
+    written_weight: float = math.inf
+    """The weight, as shown, of the sensor's last write (infinite before the first)."""
+
+    def weight_write_due(self) -> bool:
+        """Whether the shown weight has moved far enough, or settled, to be written."""
+        weight = round(self.state.weight, WEIGHT_DECIMALS)
+        if weight == self.written_weight:
+            return False
+        moved = round(abs(weight - self.written_weight), WEIGHT_DECIMALS)
+        return moved >= WEIGHT_WRITE_STEP or weight == round(self.state.target, WEIGHT_DECIMALS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,7 +386,7 @@ class ZoneRuntime:
     def _async_on_deadline(self, _now: datetime) -> None:
         self._cancel_deadline = None
         self._deadline = None
-        self.async_update(write_everything=False)
+        self.async_update(refresh=False)
 
     @callback
     def _async_start_grace(self, _hass: HomeAssistant) -> None:
@@ -420,7 +432,7 @@ class ZoneRuntime:
             )
         ):
             return  # only attributes OORT doesn't read changed
-        self.async_update(write_everything=False)
+        self.async_update(refresh=False)
 
     @callback
     def _async_on_timer(self, _now: datetime) -> None:
@@ -433,7 +445,7 @@ class ZoneRuntime:
         for update in updates:
             self._template_results[update.template] = update.result
             self._log_template_result(update.template, update.result)
-        self.async_update(write_everything=False)
+        self.async_update(refresh=False)
 
     def _log_template_result(self, template: Template, result: Any) -> None:
         """Log a template result that can't count as true or false.
@@ -554,12 +566,12 @@ class ZoneRuntime:
     # -- update ---------------------------------------------------------------
 
     @callback
-    def async_update(self, *, write_everything: bool = True) -> None:
+    def async_update(self, *, refresh: bool = True) -> None:
         """Advance every room to now, recompute the output and notify entities.
 
-        With ``write_everything`` (the minute timer, startup, grace end) every sensor
-        writes its state; otherwise (a state or template event) a sensor writes only
-        if something it shows has changed.
+        A weight sensor writes when anything it shows besides the weight changes; with
+        ``refresh`` (the minute timer, startup, grace end) also when its weight is due
+        (``Room.weight_write_due``).
         """
         people_by_area = self._people_by_area()
         zone: dict[str, tuple[RoomState, RoomInputs, RoomConfig]] = {}
@@ -576,8 +588,12 @@ class ZoneRuntime:
             elif room.people:
                 room.shown_people = room.people
             attributes = room_attributes(room)
-            room.write_pending = write_everything or attributes != room.attributes
+            room.write_pending = attributes != room.attributes or (
+                refresh and room.weight_write_due()
+            )
             room.attributes = attributes
+            if room.write_pending:
+                room.written_weight = round(room.state.weight, WEIGHT_DECIMALS)
         self._async_schedule_deadline(step.next_deadline)
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's

@@ -209,7 +209,7 @@ Each zone creates one device ("OORT `<zone name>`") containing:
 
 ### `<Room> weight` sensor
 
-Its state is the room's current weight (a number between 0 and the largest of the room's weights), stored to 4 decimal places. It's written once a minute, and straight away when the room's status or inputs change — not on every temperature reading. Attributes:
+Its state is the room's current weight (a number between 0 and the largest of the room's weights), stored to 4 decimal places. It's written straight away when the room's status or inputs change; in between, it's written on the minute timer once the weight has moved at least 0.01 since it was last written, and once more when it reaches its target — not on every temperature reading. So a slowly settling weight can show up to 0.01 away from its exact value until it settles; the zone's temperature always uses the exact weights. Attributes:
 
 | Attribute | Meaning |
 |---|---|
