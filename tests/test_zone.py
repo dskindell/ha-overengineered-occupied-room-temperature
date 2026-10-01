@@ -703,14 +703,13 @@ async def test_temperature_sensor_attributes(
     await setup_zone(hass, [room("kitchen"), room("office")])
     attributes = hass.states.get(TEMPERATURE).attributes
     assert attributes["contributing_rooms"] == 0  # new rooms start at 0
-    assert attributes["total_weight"] == 0.0
     assert attributes["fallback"] is True  # so the plain average leads
 
     await advance(hass, freezer, 60)
     attributes = hass.states.get(TEMPERATURE).attributes
     assert attributes["contributing_rooms"] == 2
-    assert attributes["total_weight"] == round(2 * 0.001 * (1 - math.exp(-60 / 8)), 4)
     assert attributes["fallback"] is False
+    assert "total_weight" not in attributes
 
 
 async def test_an_open_room_stops_contributing_once_faded(
@@ -729,9 +728,7 @@ async def test_an_open_room_stops_contributing_once_faded(
     await advance(hass, freezer, 5)
     assert hass.states.get(TEMPERATURE).attributes["contributing_rooms"] == 2  # still fading
     await advance(hass, freezer, 10)
-    attributes = hass.states.get(TEMPERATURE).attributes
-    assert attributes["contributing_rooms"] == 1
-    assert attributes["total_weight"] == pytest.approx(weight(hass, KITCHEN_WEIGHT), abs=1e-4)
+    assert hass.states.get(TEMPERATURE).attributes["contributing_rooms"] == 1
 
 
 async def test_changes_to_attributes_oort_does_not_read_are_ignored(hass: HomeAssistant) -> None:
@@ -1003,14 +1000,6 @@ async def test_settled_weights_stop_changing(
     await advance(hass, freezer, 5)
     after = hass.states.get(KITCHEN_WEIGHT)
     assert after.last_updated == before.last_updated  # no new value or attribute, so no new row
-
-
-async def test_total_weight_is_not_recorded(hass: HomeAssistant) -> None:
-    set_temperature(hass, "kitchen", "20")
-    await setup_zone(hass, [room("kitchen")])
-    temperature = hass.states.get(TEMPERATURE)
-    assert "total_weight" in temperature.attributes  # still on the entity
-    assert "total_weight" in temperature.state_info["unrecorded_attributes"]
 
 
 async def test_temperature_sensor_not_rewritten_when_nothing_visible_changes(
@@ -1396,7 +1385,7 @@ async def test_template_failing_at_startup_is_logged_once(
 # ---------------------------------------------------------------------------
 
 
-async def test_temperature_readings_alone_do_not_rewrite_the_temperature_sensor(
+async def test_moving_weights_alone_do_not_rewrite_the_temperature_sensor(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "20")
@@ -1412,16 +1401,13 @@ async def test_temperature_readings_alone_do_not_rewrite_the_temperature_sensor(
     assert [state for entity_id, state in seen if entity_id == TEMPERATURE] == []
 
     freezer.tick(timedelta(seconds=5))
-    async_fire_time_changed(hass)  # the minute timer refreshes total_weight
+    async_fire_time_changed(hass)  # the minute timer
     await hass.async_block_till_done()
-    rows = [state for entity_id, state in seen if entity_id == TEMPERATURE]
-    assert len(rows) == 1
-    assert rows[0].attributes["total_weight"] == pytest.approx(
-        weight(hass, KITCHEN_WEIGHT) + weight(hass, OFFICE_WEIGHT), abs=2e-4
-    )
+    assert [entity_id for entity_id, _ in seen if entity_id == KITCHEN_WEIGHT]
+    assert [state for entity_id, state in seen if entity_id == TEMPERATURE] == []
 
 
-async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
+async def test_a_person_moving_rewrites_only_the_room_weights(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     set_temperature(hass, "kitchen", "20")
@@ -1433,11 +1419,9 @@ async def test_a_person_moving_rewrites_the_temperature_sensor_at_once(
     freezer.tick(timedelta(seconds=30))
     hass.states.async_set("sensor.alex_area", "Office")
     await hass.async_block_till_done()
-    rows = [state for entity_id, state in seen if entity_id == TEMPERATURE]
-    assert len(rows) == 1, "written straight away, with the weights as of the move"
-    assert rows[0].attributes["total_weight"] == pytest.approx(
-        weight(hass, KITCHEN_WEIGHT) + weight(hass, OFFICE_WEIGHT), abs=2e-4
-    )
+    written = {entity_id for entity_id, _ in seen}
+    assert {KITCHEN_WEIGHT, OFFICE_WEIGHT} <= written
+    assert TEMPERATURE not in written
 
 
 # ---------------------------------------------------------------------------

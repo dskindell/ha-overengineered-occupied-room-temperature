@@ -215,7 +215,6 @@ class ZoneRuntime:
             for data in options[CONF_PEOPLE].values()
         ]
         self.result = Aggregate(None, 0.0, 0, False)
-        self.any_room_written = True
         self._template_results: dict[Template, Any] = {}
         self._template_labels: dict[Template, list[str]] = {}
         self._template_result_kinds: dict[Template, _ResultKind] = {}
@@ -579,7 +578,6 @@ class ZoneRuntime:
             attributes = room_attributes(room)
             room.write_pending = write_everything or attributes != room.attributes
             room.attributes = attributes
-        self.any_room_written = any(room.write_pending for room in self.rooms.values())
         self._async_schedule_deadline(step.next_deadline)
         for update in list(self._listeners):
             # One entity failing to write must not stop the others (as HA's

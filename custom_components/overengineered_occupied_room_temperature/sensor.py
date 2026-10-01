@@ -105,18 +105,12 @@ class WeightedTemperatureSensor(_OortSensor):
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_suggested_display_precision = TEMPERATURE_DECIMALS
-    # Changes on almost every update; kept on the entity but out of history.
-    _unrecorded_attributes = frozenset({"total_weight"})
 
     def __init__(self, runtime: ZoneRuntime, device: DeviceInfo) -> None:
         super().__init__(runtime, device)
         self._attr_unique_id = temperature_unique_id(runtime.entry)
         self._attr_native_unit_of_measurement = runtime.unit
-        self._total_weight = self._current_total_weight()
         self._written: tuple[Any, ...] | None = None
-
-    def _current_total_weight(self) -> float:
-        return round(self._runtime.result.total_weight, WEIGHT_DECIMALS)
 
     def _visible(self) -> tuple[Any, ...]:
         result = self._runtime.result
@@ -124,11 +118,7 @@ class WeightedTemperatureSensor(_OortSensor):
 
     @callback
     def _async_on_runtime_update(self) -> None:
-        # total_weight changes with almost every reading while weights move, and any
-        # changed attribute makes a new recorder row.
-        visible = self._visible()
-        if self._runtime.any_room_written or visible != self._written:
-            self._total_weight = self._current_total_weight()
+        if (visible := self._visible()) != self._written:
             self._written = visible
             self.async_write_ha_state()
 
@@ -145,7 +135,6 @@ class WeightedTemperatureSensor(_OortSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         result = self._runtime.result
         return {
-            "total_weight": self._total_weight,
             "contributing_rooms": result.contributing_rooms,
             "fallback": result.fallback,
         }
