@@ -93,7 +93,7 @@ For each room you configure, OORT tracks a **weight** between 0 and 1, driven by
 | `open` | An opening entity is on, or the opening template is true — the room is left out | `0` |
 | `dropout` | The room's temperature sensor has no usable reading — the room is left out | `0` |
 
-The first matching status applies, in the order `open`, `dropout`, `person`, `occupied`, `unoccupied`.
+The first matching status applies, in the order `open`, `dropout`, `person`, `occupied`, `unoccupied`. Despite its name, `open` covers anything you want a room left out for: an open window, a space heater, a thermostat mode (see [Examples](#examples)).
 
 The weight doesn't jump straight to its target — it moves there exponentially, over a configurable time constant (a "tau", in minutes) that's different for rising into a status and falling out of it. This smooths out someone briefly walking through a room, or a motion sensor's usual on/off flicker.
 
@@ -129,6 +129,45 @@ A dog or cat wandering through sets off a room's motion sensor for a minute or t
 ### Leave a room out while its window is open
 
 An open window makes the room's reading say more about the weather than about the house. Add the window's contact sensor to the room's **opening entities**: while it's on, the room fades out of the average at the open tau (1 minute by default) and comes back once it closes.
+
+### Leave out a room with its own heat source
+
+A space heater, a fireplace or a busy 3D printer warms its own room. The room's reading then says nothing about the rest of the house, and if the room counts, the HVAC backs off for everyone else. An opening doesn't have to be a window: anything that makes a room's reading misleading can leave it out.
+
+The opening entities field takes `binary_sensor` and `input_boolean` entities only, so for a heater on a smart plug use the room's **opening template**:
+
+```jinja
+{{ is_state('switch.office_space_heater', 'on') }}
+```
+
+or, if the plug reports power:
+
+```jinja
+{{ states('sensor.office_heater_power') | float(0) > 50 }}
+```
+
+The room fades out while the heater runs and fades back in after it stops. Window contacts can stay in the opening entities; the room is left out if either says so.
+
+### Keep a room counted despite an open window
+
+Sometimes an open window is fine, such as a bedroom window left open at night with everyone asleep in that room. Move the window from the opening entities into the **opening template**, with the exception written in:
+
+```jinja
+{{ is_state('binary_sensor.bedroom_window', 'on')
+   and not is_state('input_boolean.gone_to_bed', 'on') }}
+```
+
+The bedroom is left out while its window is open during the day, but keeps counting once everyone has gone to bed.
+
+### Count only some rooms in a thermostat preset
+
+If your thermostat has presets, a room's **opening template** can leave it out in some of them, for example the offices while the house is asleep or away:
+
+```jinja
+{{ state_attr('climate.house', 'preset_mode') in ['sleep', 'away'] }}
+```
+
+Preset names depend on your thermostat; its `preset_mode` attribute shows the current one. Keep at least one room counted in every preset.
 
 ### Leave out rooms the AC doesn't reach
 
