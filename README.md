@@ -331,7 +331,7 @@ OORT doesn't poll anything. It recalculates a zone:
 
 A recalculation doesn't always write the sensors, which keeps history (and the database) smaller:
 
-- A **`<Room> weight`** sensor is written every minute, and straight away when any of its attributes change, such as its status. A new temperature reading on its own doesn't write it.
+- A **`<Room> weight`** sensor is written straight away when any of its attributes change, such as its status. In between, it's written on the minute timer once its weight has moved at least 0.01 since it was last written, and once more when the weight reaches its target, so a settling weight can show up to 0.01 off until it settles. A new temperature reading on its own doesn't write it. The zone's temperature always uses the exact weights.
 - The **`Temperature`** sensor is written only when its rounded value, `contributing_rooms` or `fallback` changes.
 
 ## Fallback and stale sensors
