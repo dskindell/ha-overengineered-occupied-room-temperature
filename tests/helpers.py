@@ -12,6 +12,9 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     ZONE_SETTINGS,
 )
 
+# Every delay off, for tests of behaviour that delays would only postpone.
+NO_DELAYS = {key: 0.0 for key in ROOM_SETTINGS if key.startswith("delay_")}
+
 
 def stored_settings(**changes: Any) -> dict[str, dict[str, Any]]:
     """A zone's stored settings: room defaults and zone-wide settings apart."""

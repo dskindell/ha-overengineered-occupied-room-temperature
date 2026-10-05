@@ -124,10 +124,10 @@ def _tau(key: str, default: float, *, zero_allowed: bool) -> Setting:
     )
 
 
-def _delay(key: str) -> Setting:
+def _delay(key: str, default: float = 0.0) -> Setting:
     return Setting(
         key=key,
-        default=0.0,
+        default=default,
         minimum=0.0,
         maximum=MAX_DELAY,
         too_small="delay_negative",
@@ -156,9 +156,9 @@ SETTINGS: Final = (
     _tau(CONF_TAU_OCCUPANCY_FALL, 8.0, zero_allowed=False),
     _tau(CONF_TAU_OPEN, 1.0, zero_allowed=True),  # 0 = instant
     _tau(CONF_TAU_DROPOUT, 5.0, zero_allowed=True),
-    _delay(CONF_DELAY_PERSON_ENTER),
+    _delay(CONF_DELAY_PERSON_ENTER, 1.0),
     _delay(CONF_DELAY_PERSON_EXIT),
-    _delay(CONF_DELAY_OCCUPANCY_ENTER),
+    _delay(CONF_DELAY_OCCUPANCY_ENTER, 2.0),
     _delay(CONF_DELAY_OCCUPANCY_EXIT),
     _weight(CONF_W_PERSON, 1.0),
     _weight(CONF_W_OCCUPIED, 0.5),
