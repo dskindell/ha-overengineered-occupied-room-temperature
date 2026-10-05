@@ -63,7 +63,7 @@ from custom_components.overengineered_occupied_room_temperature.zone import (
     repairs_issue_id,
     room_unique_id,
 )
-from tests.helpers import SAVED, stored_settings
+from tests.helpers import NO_DELAYS, SAVED, stored_settings
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -126,7 +126,7 @@ async def setup_zone(
         title="Home",
         version=1,
         data={CONF_NAME: "Home", CONF_TEMPERATURE_UNIT: hass.config.units.temperature_unit},
-        options=zone_options(items, **settings),
+        options=zone_options(items, **{**NO_DELAYS, **settings}),
     )
     entry.add_to_hass(hass)
     # Register the room sensors as a previous run would have, so saved state (from

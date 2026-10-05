@@ -33,7 +33,7 @@ from custom_components.overengineered_occupied_room_temperature.engine import (
     step_zone,
     target_weight,
 )
-from tests.helpers import stored_settings
+from tests.helpers import NO_DELAYS, stored_settings
 
 MINUTE = 60.0
 
@@ -44,7 +44,7 @@ def select_tau(status: Status, last: Status | None, taus: Taus, **history: Any) 
     return tau
 
 
-CONFIG = room_config(const.DEFAULTS, {})
+CONFIG = room_config(const.DEFAULTS, NO_DELAYS)
 
 
 def inputs(
@@ -515,9 +515,9 @@ class TestRoomConfig:
         "tau_occupancy_fall": 8.0,
         "tau_open": 1.0,
         "tau_dropout": 5.0,
-        "delay_person_enter": 0.0,
+        "delay_person_enter": 1.0,
         "delay_person_exit": 0.0,
-        "delay_occupancy_enter": 0.0,
+        "delay_occupancy_enter": 2.0,
         "delay_occupancy_exit": 0.0,
         "w_person": 1.0,
         "w_occupied": 0.5,
@@ -532,7 +532,7 @@ class TestRoomConfig:
         )
         assert config.taus == Taus(3.0, 1.0, 10.0, 8.0, 1.0, 5.0)
         assert config.weights == Weights(1.0, 0.8, 0.001)
-        assert config.delays == Delays(0.0, 2.0, 0.0, 0.0)
+        assert config.delays == Delays(1.0, 2.0, 2.0, 0.0)
         assert config.stale_limit == 5.0
 
     def test_stale_limit_is_zone_wide(self) -> None:

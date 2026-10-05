@@ -97,7 +97,7 @@ The first matching status applies, in the order `open`, `dropout`, `person`, `oc
 
 The weight doesn't jump straight to its target — it moves there exponentially, over a configurable time constant (a "tau", in minutes) that's different for rising into a status and falling out of it. This smooths out someone briefly walking through a room, or a motion sensor's usual on/off flicker.
 
-Optional **delays** go further. With an **enter delay**, a room ignores a person (or occupancy) until they've been there that long, so passing through — or a room-presence sensor briefly flipping someone into the room — doesn't count at all. With an **exit delay**, it keeps counting them for that long after they leave, which rides out a location that briefly flips away. Delays are off (`0`) by default.
+Optional **delays** go further. With an **enter delay**, a room ignores a person (or occupancy) until they've been there that long, so passing through — or a room-presence sensor briefly flipping someone into the room — doesn't count at all. With an **exit delay**, it keeps counting them for that long after they leave, which rides out a location that briefly flips away. By default a room waits 1 minute before it counts a person and 2 minutes before it counts occupancy; exit delays are off (`0`).
 
 Every minute, and whenever something relevant changes, OORT recomputes each room's weight and averages the rooms' temperatures, each counting in proportion to its weight. That average is the zone's `Temperature` sensor, which your thermostat reads. The exact formula is under [Fallback and stale sensors](#fallback-and-stale-sensors).
 
@@ -191,11 +191,11 @@ Occupancy counts at the **occupied weight**, so raise the bedroom's to 1.0 if it
 
 ### Rooms people walk through
 
-A hallway, or the kitchen on the way to the garage, briefly pulls the temperature toward it every time someone passes. Give that room a **person enter delay** of about a minute (and an **occupancy enter delay** if it has a motion sensor), so it only counts people who stop there.
+A hallway, or the kitchen on the way to the garage, briefly pulls the temperature toward it every time someone passes. The default enter delays (1 minute for a person, 2 for occupancy) ignore most walk-throughs; if a room still pulls the temperature, raise its **person enter delay** and **occupancy enter delay** under its Overrides, so it only counts people who stop there.
 
 ### A room-presence sensor that flips people between rooms
 
-Room-presence sensors sometimes place someone in the next room for a few seconds. A **person exit delay** of a minute or two on each room keeps counting them where they were, and a **person enter delay** keeps the room they flipped into from counting them.
+Room-presence sensors sometimes place someone in the next room for a few seconds. The default **person enter delay** keeps the room they flipped into from counting them. A **person exit delay** would keep counting them where they were, but it also keeps counting them after they really leave, so the temperature lags every real move; add one only if the flips last longer than the enter delay and you've checked it helps.
 
 ## Configuration
 
@@ -240,9 +240,9 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
 | Open tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
 | Sensor dropout tau | How fast a room fades out when its temperature sensor becomes unavailable. `0` = instantly. | 5 |
-| Person enter delay | How long a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. `0` = at once. | 0 |
+| Person enter delay | How long a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. `0` = at once. | 1 |
 | Person exit delay | How long a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. `0` = at once. | 0 |
-| Occupancy enter delay | How long an occupancy sensor or template must stay on before the room counts as occupied. `0` = at once. | 0 |
+| Occupancy enter delay | How long an occupancy sensor or template must stay on before the room counts as occupied. `0` = at once. | 2 |
 | Occupancy exit delay | How long the room keeps counting as occupied after its occupancy sensors and template go off. `0` = at once. | 0 |
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
@@ -282,8 +282,8 @@ What the thermostat sees is each room's **share** of the total weight, so a tau 
 
 ![Living room share of the zone temperature during a 5-minute trip to the kitchen and a later move, for person fall taus of 3, 10 and 20 minutes](docs/images/short-trip.svg)
 
-- **3 minutes (default):** the zone follows the person closely. The living room's share drops to 19% during the trip, and after the real move it's under 5% within 10 minutes.
-- **10 or 20 minutes:** the living room stays at 43–49% through the trip, so short trips out barely move the temperature. The cost comes after a real move: 10 minutes later the living room still makes up 28% (tau 10) or 38% (tau 20). The kitchen falls just as slowly after the trip, which is why the living room only gets back to 77–90% before the move.
+- **3 minutes (default):** the zone follows the person closely. The living room's share drops to 20% during the trip, and after the real move it's under 5% within 10 minutes.
+- **10 or 20 minutes:** the living room stays at 45–51% through the trip, so short trips out barely move the temperature. The cost comes after a real move: 10 minutes later the living room still makes up 28% (tau 10) or 39% (tau 20). The kitchen falls just as slowly after the trip, which is why the living room only gets back to 78–91% before the move.
 
 Rules of thumb:
 
@@ -291,7 +291,7 @@ Rules of thumb:
 - **Person fall** and **occupancy fall**: raise them to keep a room counted through short trips out, or through gaps in a motion sensor that goes off while you sit still. Lower them if the temperature keeps following a room you have left.
 - **Open**: keep it short. An open window soon makes the room's reading misleading.
 - **Dropout**: long enough to ride out a sensor briefly going offline, short enough that a dead sensor isn't trusted for long. Its last reading is dropped anyway once the stale limit passes.
-- **Delays**: use a delay rather than a longer tau when short events shouldn't count at all. A person enter delay of about a minute ignores walk-throughs; a person exit delay of a minute or two covers a room-presence sensor that flips people between rooms. An occupancy exit delay is usually unnecessary if the motion sensor already holds itself on for a while.
+- **Delays**: use a delay rather than a longer tau when short events shouldn't count at all. The default person enter delay of 1 minute ignores most walk-throughs; a person exit delay can ride out a room-presence sensor that flips people between rooms, but it also delays every real move, so try it only if the enter delay isn't enough. An occupancy exit delay is usually unnecessary if the motion sensor already holds itself on for a while.
 
 Taus and delays can be set for the whole zone on the **Settings** screen, or for one room under its **Overrides**, for example a longer occupancy fall tau for a room with a twitchy motion sensor.
 
