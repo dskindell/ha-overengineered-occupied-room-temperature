@@ -230,6 +230,8 @@ To rename a zone, use Home Assistant's own **Rename** in the zone's ⋮ menu. Th
 
 The **Settings** screen has the rooms' defaults (every room uses these unless it overrides them) and, in its **Zone** section, settings for the whole zone.
 
+Each field's description ends with the integration's default, and says "yours differs" when your value isn't it. While any setting differs, the screen also offers **Restore defaults**: tick it and submit, and the form comes back filled with the defaults to review (change any you want to keep), then submit again and **Save**. Use it after an update to pick up new defaults. Room overrides are kept.
+
 Times are in minutes. A **tau** is a time constant: roughly how long a room's weight takes to get two-thirds of the way to its new value — smaller reacts faster, larger is smoother. **Weights** (0 to 1) say how much each room counts; only their ratios matter.
 
 | Field | Description | Default |

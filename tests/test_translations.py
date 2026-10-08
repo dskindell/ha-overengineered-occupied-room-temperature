@@ -26,7 +26,7 @@ TRANSLATIONS = json.loads(
 )
 
 MENU_STEPS: dict[str, vol.Schema] = {
-    "defaults": flow.DEFAULTS_SCHEMA,
+    "defaults": flow.RESTORE_SCHEMA,
     "rooms": flow._choice_schema(CONF_ROOM, {}, "Add"),
     "room": flow._room_schema(new=True),
     "room_edit": flow._room_schema(new=False),
@@ -83,6 +83,7 @@ def test_create_and_configure_texts_match() -> None:
 
 
 SETTING_STEPS = ("defaults", "room", "room_edit")
+DIFFERS = {f"{setting.key}_differs" for setting in SETTINGS}
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
@@ -96,11 +97,13 @@ def _placeholders(node: Any) -> set[str]:
 def test_setting_placeholders_are_only_used_where_the_flow_supplies_them(step_id: str) -> None:
     used = _placeholders(TRANSLATIONS["config"]["step"][step_id]) & flow.SETTING_PLACEHOLDERS.keys()
     assert not used or step_id in SETTING_STEPS
+    differs = _placeholders(TRANSLATIONS["config"]["step"][step_id]) & DIFFERS
+    assert not differs or step_id == "defaults"
 
 
 def test_setting_texts_use_known_placeholders() -> None:
     used = _placeholders({step: TRANSLATIONS["config"]["step"][step] for step in SETTING_STEPS})
-    assert used - {"area"} <= flow.SETTING_PLACEHOLDERS.keys()
+    assert used - {"area"} <= flow.SETTING_PLACEHOLDERS.keys() | DIFFERS
 
 
 def test_setting_errors_use_known_placeholders() -> None:
@@ -116,7 +119,8 @@ def test_every_default_is_shown_from_the_settings_table() -> None:
     step = TRANSLATIONS["config"]["step"]["defaults"]
     descriptions = {**step["data_description"], **step["sections"]["zone"]["data_description"]}
     for setting in SETTINGS:
-        assert f"Default {{{setting.key}_default}}." in descriptions[setting.key]
+        key = setting.key
+        assert f"Default {{{key}_default}}{{{key}_differs}}." in descriptions[key]
 
 
 @pytest.mark.parametrize("limit", ["too_small", "too_large"])
