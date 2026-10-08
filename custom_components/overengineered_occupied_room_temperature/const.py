@@ -151,14 +151,14 @@ def _weight(
 
 SETTINGS: Final = (
     _tau(CONF_TAU_PERSON_RISE, 3.0, zero_allowed=False),
-    _tau(CONF_TAU_PERSON_FALL, 3.0, zero_allowed=False),
+    _tau(CONF_TAU_PERSON_FALL, 2.0, zero_allowed=False),
     _tau(CONF_TAU_OCCUPANCY_RISE, 10.0, zero_allowed=False),
-    _tau(CONF_TAU_OCCUPANCY_FALL, 8.0, zero_allowed=False),
-    _tau(CONF_TAU_OPEN, 1.0, zero_allowed=True),  # 0 = instant
+    _tau(CONF_TAU_OCCUPANCY_FALL, 6.0, zero_allowed=False),
+    _tau(CONF_TAU_OPEN, 2.0, zero_allowed=True),  # 0 = instant
     _tau(CONF_TAU_DROPOUT, 5.0, zero_allowed=True),
     _delay(CONF_DELAY_PERSON_ENTER, 1.0),
     _delay(CONF_DELAY_PERSON_EXIT),
-    _delay(CONF_DELAY_OCCUPANCY_ENTER, 2.0),
+    _delay(CONF_DELAY_OCCUPANCY_ENTER, 1.0),
     _delay(CONF_DELAY_OCCUPANCY_EXIT),
     _weight(CONF_W_PERSON, 1.0),
     _weight(CONF_W_OCCUPIED, 0.5),

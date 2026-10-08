@@ -301,6 +301,7 @@ async def test_opening_template_true_fades_room_out(
             ),
             person("Alex", "sensor.alex_area"),
         ],
+        tau_open=1.0,
     )
     await advance(hass, freezer, 60)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
@@ -311,7 +312,7 @@ async def test_opening_template_true_fades_room_out(
     assert kitchen.attributes["status"] == "open"
     assert kitchen.attributes["open"] is True
     await advance(hass, freezer, 1)
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=5e-5)  # open τ
+    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(math.exp(-1), abs=5e-5)
 
 
 async def test_any_opening_entity_on_makes_room_open(hass: HomeAssistant) -> None:
@@ -432,6 +433,7 @@ async def test_all_rooms_open_uses_plain_average(
             room("office", **{CONF_OPENING_SENSORS: ["input_boolean.windows_open"]}),
             person("Alex", "sensor.alex_area"),
         ],
+        tau_open=1.0,
     )
     await advance(hass, freezer, 60)
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.01)
@@ -721,7 +723,9 @@ async def test_an_open_room_stops_contributing_once_faded(
     hass.states.async_set("binary_sensor.office_window", "off")
     occupied = {CONF_OCCUPANCY_TEMPLATE: "{{ true }}"}
     window = {CONF_OPENING_SENSORS: ["binary_sensor.office_window"]}
-    await setup_zone(hass, [room("kitchen", **occupied), room("office", **occupied, **window)])
+    await setup_zone(
+        hass, [room("kitchen", **occupied), room("office", **occupied, **window)], tau_open=1.0
+    )
     await advance(hass, freezer, 60)
     assert hass.states.get(TEMPERATURE).attributes["contributing_rooms"] == 2
 
@@ -863,6 +867,7 @@ async def test_person_leaving_an_occupied_room_uses_person_fall(
             room("kitchen", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}),
             person("Alex", "sensor.alex_area"),
         ],
+        tau_person_fall=3.0,
     )
     await advance(hass, freezer, 60)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
