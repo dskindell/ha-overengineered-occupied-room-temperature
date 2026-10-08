@@ -271,7 +271,7 @@ class TestStepRoom:
         state = step_room(state, inputs(open=True, person=True), CONFIG, 0.0)
         assert state.status is Status.OPEN
         state = step_room(state, inputs(open=True, person=True), CONFIG, MINUTE)
-        assert state.weight == pytest.approx(math.exp(-1))  # open tau = 1 min
+        assert state.weight == pytest.approx(math.exp(-1 / CONFIG.taus.open))
 
     def test_grace_freezes_weight_but_tracks_status(self) -> None:
         state = RoomState(weight=0.5, target=0.5, tau=10.0, last_update=0.0)
@@ -510,14 +510,14 @@ class TestAggregate:
 class TestRoomConfig:
     DEFAULTS: ClassVar[dict[str, float]] = {
         "tau_person_rise": 3.0,
-        "tau_person_fall": 3.0,
+        "tau_person_fall": 2.0,
         "tau_occupancy_rise": 10.0,
-        "tau_occupancy_fall": 8.0,
-        "tau_open": 1.0,
+        "tau_occupancy_fall": 6.0,
+        "tau_open": 2.0,
         "tau_dropout": 5.0,
         "delay_person_enter": 1.0,
         "delay_person_exit": 0.0,
-        "delay_occupancy_enter": 2.0,
+        "delay_occupancy_enter": 1.0,
         "delay_occupancy_exit": 0.0,
         "w_person": 1.0,
         "w_occupied": 0.5,
@@ -530,9 +530,9 @@ class TestRoomConfig:
             self.DEFAULTS,
             {"tau_person_fall": 1.0, "w_occupied": 0.8, "delay_person_exit": 2.0},
         )
-        assert config.taus == Taus(3.0, 1.0, 10.0, 8.0, 1.0, 5.0)
+        assert config.taus == Taus(3.0, 1.0, 10.0, 6.0, 2.0, 5.0)
         assert config.weights == Weights(1.0, 0.8, 0.001)
-        assert config.delays == Delays(1.0, 2.0, 2.0, 0.0)
+        assert config.delays == Delays(1.0, 2.0, 1.0, 0.0)
         assert config.stale_limit == 5.0
 
     def test_stale_limit_is_zone_wide(self) -> None:

@@ -97,7 +97,7 @@ The first matching status applies, in the order `open`, `dropout`, `person`, `oc
 
 The weight doesn't jump straight to its target — it moves there exponentially, over a configurable time constant (a "tau", in minutes) that's different for rising into a status and falling out of it. This smooths out someone briefly walking through a room, or a motion sensor's usual on/off flicker.
 
-Optional **delays** go further. With an **enter delay**, a room ignores a person (or occupancy) until they've been there that long, so passing through — or a room-presence sensor briefly flipping someone into the room — doesn't count at all. With an **exit delay**, it keeps counting them for that long after they leave, which rides out a location that briefly flips away. By default a room waits 1 minute before it counts a person and 2 minutes before it counts occupancy; exit delays are off (`0`).
+Optional **delays** go further. With an **enter delay**, a room ignores a person (or occupancy) until they've been there that long, so passing through — or a room-presence sensor briefly flipping someone into the room — doesn't count at all. With an **exit delay**, it keeps counting them for that long after they leave, which rides out a location that briefly flips away. By default a room waits 1 minute before it counts a person or occupancy; exit delays are off (`0`).
 
 Every minute, and whenever something relevant changes, OORT recomputes each room's weight and averages the rooms' temperatures, each counting in proportion to its weight. That average is the zone's `Temperature` sensor, which your thermostat reads. The exact formula is under [Fallback and stale sensors](#fallback-and-stale-sensors).
 
@@ -128,7 +128,7 @@ A dog or cat wandering through sets off a room's motion sensor for a minute or t
 
 ### Leave a room out while its window is open
 
-An open window makes the room's reading say more about the weather than about the house. Add the window's contact sensor to the room's **opening entities**: while it's on, the room fades out of the average at the open tau (1 minute by default) and comes back once it closes.
+An open window makes the room's reading say more about the weather than about the house. Add the window's contact sensor to the room's **opening entities**: while it's on, the room fades out of the average at the open tau (2 minutes by default) and comes back once it closes.
 
 ### Leave out a room with its own heat source
 
@@ -191,7 +191,7 @@ Occupancy counts at the **occupied weight**, so raise the bedroom's to 1.0 if it
 
 ### Rooms people walk through
 
-A hallway, or the kitchen on the way to the garage, briefly pulls the temperature toward it every time someone passes. The default enter delays (1 minute for a person, 2 for occupancy) ignore most walk-throughs; if a room still pulls the temperature, raise its **person enter delay** and **occupancy enter delay** under its Overrides, so it only counts people who stop there.
+A hallway, or the kitchen on the way to the garage, briefly pulls the temperature toward it every time someone passes. The default enter delays (1 minute) ignore most walk-throughs; if a room still pulls the temperature, raise its **person enter delay** and **occupancy enter delay** under its Overrides, so it only counts people who stop there.
 
 ### A room-presence sensor that flips people between rooms
 
@@ -235,14 +235,14 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 | Field | Description | Default |
 |---|---|---|
 | Person rise tau | How fast a room's weight rises when a tracked person arrives. | 3 |
-| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. Also used when a room becomes occupied while its weight is still above the occupied weight — for example when motion returns, or after a brief open period or dropout, while it is still falling after a person left. | 3 |
+| Person fall tau | How fast it falls after the last tracked person leaves — including while an occupancy sensor there is still on. Larger keeps a room counted during short trips out. Also used when a room becomes occupied while its weight is still above the occupied weight — for example when motion returns, or after a brief open period or dropout, while it is still falling after a person left. | 2 |
 | Occupancy rise tau | How fast it rises when an occupancy sensor or template says someone is there (and no tracked person is). Also used when an empty room climbs back up to the unoccupied weight — for example after being open, or when it's new. | 10 |
-| Occupancy fall tau | How fast it falls after occupancy ends. | 8 |
-| Open tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 1 |
+| Occupancy fall tau | How fast it falls after occupancy ends. | 6 |
+| Open tau | How fast a room fades out when it becomes "open" (an opening entity turns on, or the opening template turns true). `0` = instantly. | 2 |
 | Sensor dropout tau | How fast a room fades out when its temperature sensor becomes unavailable. `0` = instantly. | 5 |
 | Person enter delay | How long a tracked person must stay in a room before it counts them. Ignores people passing through, or a location that briefly flips to this room. `0` = at once. | 1 |
 | Person exit delay | How long a room keeps counting a tracked person after they leave. Ignores a location that briefly flips away. `0` = at once. | 0 |
-| Occupancy enter delay | How long an occupancy sensor or template must stay on before the room counts as occupied. `0` = at once. | 2 |
+| Occupancy enter delay | How long an occupancy sensor or template must stay on before the room counts as occupied. `0` = at once. | 1 |
 | Occupancy exit delay | How long the room keeps counting as occupied after its occupancy sensors and template go off. `0` = at once. | 0 |
 | Person weight | Target weight while a tracked person is in the room. | 1.0 |
 | Occupied weight | Target weight while the room is occupied but no tracked person is in it. | 0.5 |
@@ -263,7 +263,7 @@ With the default settings, a room's weight rises like this when someone arrives:
 
 and falls like this when something changes:
 
-![Weight falling with the default settings: open in 1 minute, person fall in 3, dropout in 5, occupancy fall in 8](docs/images/default-fall.svg)
+![Weight falling with the default settings: person fall and open in 2 minutes, dropout in 5, occupancy fall in 6](docs/images/default-fall.svg)
 
 Every tau follows the same curve, stretched in time. After one tau the weight has covered 63% of the distance to its new target, after three taus 95%:
 
@@ -271,18 +271,18 @@ Every tau follows the same curve, stretched in time. After one tau the weight ha
 
 | Tau | Halfway | 90% | 95% | 99% |
 |---|---|---|---|---|
-| 1 min (open) | 0.7 min | 2.3 min | 3 min | 4.6 min |
-| 3 min (person rise and fall) | 2.1 min | 6.9 min | 9 min | 14 min |
+| 2 min (person fall, open) | 1.4 min | 4.6 min | 6 min | 9.2 min |
+| 3 min (person rise) | 2.1 min | 6.9 min | 9 min | 14 min |
 | 5 min (dropout) | 3.5 min | 12 min | 15 min | 23 min |
-| 8 min (occupancy fall) | 5.5 min | 18 min | 24 min | 37 min |
+| 6 min (occupancy fall) | 4.2 min | 14 min | 18 min | 28 min |
 | 10 min (occupancy rise) | 6.9 min | 23 min | 30 min | 46 min |
 | any tau | 0.69 × tau | 2.3 × tau | 3 × tau | 4.6 × tau |
 
 What the thermostat sees is each room's **share** of the total weight, so a tau matters most when people move between rooms. In this example a tracked person steps out of the living room into the kitchen for 5 minutes, comes back, and 20 minutes later moves to the kitchen for good. The chart shows the living room's share of the zone temperature for three person fall taus:
 
-![Living room share of the zone temperature during a 5-minute trip to the kitchen and a later move, for person fall taus of 3, 10 and 20 minutes](docs/images/short-trip.svg)
+![Living room share of the zone temperature during a 5-minute trip to the kitchen and a later move, for person fall taus of 2, 10 and 20 minutes](docs/images/short-trip.svg)
 
-- **3 minutes (default):** the zone follows the person closely. The living room's share drops to 20% during the trip, and after the real move it's under 5% within 10 minutes.
+- **2 minutes (default):** the zone follows the person closely. The living room's share drops to 10% during the trip, and after the real move it's under 5% within 7 minutes.
 - **10 or 20 minutes:** the living room stays at 45–51% through the trip, so short trips out barely move the temperature. The cost comes after a real move: 10 minutes later the living room still makes up 28% (tau 10) or 39% (tau 20). The kitchen falls just as slowly after the trip, which is why the living room only gets back to 78–91% before the move.
 
 Rules of thumb:
