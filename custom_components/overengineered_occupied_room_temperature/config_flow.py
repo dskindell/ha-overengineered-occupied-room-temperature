@@ -40,6 +40,7 @@ from .const import (
     CONF_PEOPLE,
     CONF_PERSON,
     CONF_REMOVE,
+    CONF_RESTORE_DEFAULTS,
     CONF_ROOM,
     CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
@@ -49,6 +50,7 @@ from .const import (
     CONF_TEMPERATURE_UNIT,
     CONF_VALUE_TYPE,
     CONF_ZONE_SETTINGS,
+    DEFAULTS,
     DOMAIN,
     ROOM_SETTINGS,
     SETTINGS,
@@ -66,6 +68,15 @@ SETTING_PLACEHOLDERS = {
     for setting in SETTINGS
     for field in ("default", "minimum", "maximum")
 }
+# Placeholder values aren't translated, so this note stays English.
+DIFFERS_NOTE = " — yours differs"
+
+
+def _settings_placeholders(shown: Mapping[str, Any]) -> dict[str, str]:
+    """The Settings form's texts, noting each shown value that isn't the default."""
+    return SETTING_PLACEHOLDERS | {
+        f"{key}_differs": DIFFERS_NOTE if shown[key] != DEFAULTS[key] else "" for key in DEFAULTS
+    }
 
 
 def _number(key: str) -> selector.NumberSelector:
@@ -112,6 +123,10 @@ DEFAULTS_SCHEMA = vol.Schema(
             {"collapsed": False},
         ),
     }
+)
+# Offered only while a setting differs from its default.
+RESTORE_SCHEMA = DEFAULTS_SCHEMA.extend(
+    {vol.Optional(CONF_RESTORE_DEFAULTS, default=False): selector.BooleanSelector()}
 )
 
 NAME_SCHEMA = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()})
@@ -280,23 +295,37 @@ class ZoneMenu(ConfigEntryBaseFlow):
     async def async_step_defaults(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The rooms' default taus and weights, and the zone-wide settings."""
+        """The rooms' default taus and weights, and the zone-wide settings.
+
+        *Restore defaults* refills the form with the defaults for review; they're
+        kept only once that form is submitted.
+        """
         errors: dict[str, str] = {}
-        if user_input is not None:
-            defaults = {k: v for k, v in user_input.items() if k != CONF_ZONE_SETTINGS}
+        shown = {**self._room_defaults, **self._zone_settings}
+        if user_input is not None and user_input.get(CONF_RESTORE_DEFAULTS):
+            shown = dict(DEFAULTS)
+        elif user_input is not None:
+            defaults = {
+                key: value
+                for key, value in user_input.items()
+                if key not in (CONF_ZONE_SETTINGS, CONF_RESTORE_DEFAULTS)
+            }
             zone = dict(user_input[CONF_ZONE_SETTINGS])
             if (error := validate_settings({**defaults, **zone})) is None:
                 self._room_defaults, self._zone_settings = defaults, zone
                 return await self.async_step_menu()
             errors["base"] = error
+            shown = {**defaults, **zone}
+        schema = RESTORE_SCHEMA if shown != DEFAULTS else DEFAULTS_SCHEMA
+        room = {key: shown[key] for key in ROOM_SETTINGS}
+        zone_values = {key: shown[key] for key in ZONE_SETTINGS}
         return self.async_show_form(
             step_id="defaults",
             data_schema=self.add_suggested_values_to_schema(
-                DEFAULTS_SCHEMA,
-                user_input or {**self._room_defaults, CONF_ZONE_SETTINGS: self._zone_settings},
+                schema, {**room, CONF_ZONE_SETTINGS: zone_values}
             ),
             errors=errors,
-            description_placeholders=SETTING_PLACEHOLDERS,
+            description_placeholders=_settings_placeholders(shown),
         )
 
     # -- rooms ----------------------------------------------------------------

@@ -24,6 +24,7 @@ CONF_PEOPLE: Final = "people"  # {person_id: person data}
 CONF_ROOM: Final = "room"
 CONF_PERSON: Final = "person"
 CONF_REMOVE: Final = "remove"
+CONF_RESTORE_DEFAULTS: Final = "restore_defaults"
 # List-form choices. The hyphen keeps them valid translation keys that can never
 # clash with an area ID (area IDs are slugified: only a-z, 0-9 and "_").
 CHOICE_ADD: Final = "add-new"

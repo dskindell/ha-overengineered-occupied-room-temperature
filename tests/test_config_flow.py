@@ -29,6 +29,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_PEOPLE,
     CONF_PERSON,
     CONF_REMOVE,
+    CONF_RESTORE_DEFAULTS,
     CONF_ROOM,
     CONF_ROOMS,
     CONF_SOURCE_ATTRIBUTE,
@@ -629,6 +630,64 @@ async def test_configure_defaults_prefilled_and_saved(hass: HomeAssistant) -> No
     await flow.menu("save")
     assert entry.options[CONF_DEFAULTS]["w_person"] == 0.9
     assert entry.options[CONF_ROOMS] == {"kitchen": room_data("kitchen")}
+
+
+def _suggested(result: FlowResult) -> dict[str, Any]:
+    """The Settings form's prefilled values, the Zone section's flattened in."""
+    values: dict[str, Any] = {}
+    for key, value in result["data_schema"].schema.items():
+        if str(key) == CONF_ZONE_SETTINGS:
+            values |= {str(k): k.description["suggested_value"] for k in value.schema.schema}
+        elif key.description:
+            values[str(key)] = key.description["suggested_value"]
+    return values
+
+
+async def test_settings_matching_the_defaults_offer_no_restore(hass: HomeAssistant) -> None:
+    flow = await start_configure(hass, zone_entry(hass))
+    await flow.menu(CONF_DEFAULTS)
+    placeholders = flow.result["description_placeholders"]
+    assert {placeholders[f"{key}_differs"] for key in DEFAULTS} == {""}
+    assert CONF_RESTORE_DEFAULTS not in flow.result["data_schema"].schema
+
+
+async def test_settings_note_values_that_differ_from_the_defaults(hass: HomeAssistant) -> None:
+    flow = await start_configure(hass, zone_entry(hass, tau_person_fall=3, stale_limit=12))
+    await flow.menu(CONF_DEFAULTS)
+    placeholders = flow.result["description_placeholders"]
+    differing = {key for key in DEFAULTS if placeholders[f"{key}_differs"]}
+    assert differing == {"tau_person_fall", "stale_limit"}
+    assert placeholders["tau_person_fall_differs"] == " — yours differs"
+    assert placeholders["tau_person_fall_default"] == "2"
+    assert CONF_RESTORE_DEFAULTS in flow.result["data_schema"].schema
+
+
+async def test_settings_note_the_values_of_a_rejected_form(hass: HomeAssistant) -> None:
+    flow = await start_configure(hass, zone_entry(hass))
+    await flow.menu(CONF_DEFAULTS)
+    await flow.submit(settings_input(w_base=0))
+    assert flow.result["errors"] == {"base": "base_weight_too_small"}
+    assert flow.result["description_placeholders"]["w_base_differs"]
+    assert _suggested(flow.result)["w_base"] == 0
+
+
+async def test_restore_defaults_refills_the_form_for_review(hass: HomeAssistant) -> None:
+    kitchen = room_data("kitchen", **{CONF_OVERRIDES: {"tau_person_fall": 5}})
+    entry = zone_entry(hass, rooms={"kitchen": kitchen}, tau_open=1, w_occupied=0.3, stale_limit=12)
+    flow = await start_configure(hass, entry)
+    await flow.menu(CONF_DEFAULTS)
+    await flow.submit({**settings_input(w_base=0), CONF_RESTORE_DEFAULTS: True})
+    assert flow.step == CONF_DEFAULTS
+    assert flow.result["errors"] == {}
+    assert _suggested(flow.result) == DEFAULTS
+    assert CONF_RESTORE_DEFAULTS not in flow.result["data_schema"].schema
+    await flow.submit(settings_input(tau_open=4))
+    await flow.menu("save")
+    assert entry.options == {
+        **stored_settings(tau_open=4),
+        CONF_ROOMS: {"kitchen": kitchen},
+        CONF_PEOPLE: {},
+    }
 
 
 async def test_configure_fills_in_settings_missing_from_an_older_zone(hass: HomeAssistant) -> None:
