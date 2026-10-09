@@ -180,13 +180,19 @@ def weight(hass: HomeAssistant, entity_id: str) -> float:
     return float(hass.states.get(entity_id).state)
 
 
-def restore_room_state(hass: HomeAssistant, *, unit: str = "°C", **fields: Any) -> None:
+def restore_room_state(
+    hass: HomeAssistant, *, unit: str = "°C", saved_at: float | None = None, **fields: Any
+) -> None:
     """Seed Home Assistant's restore store with the kitchen's saved state, written
-    the way the integration writes it (RoomState → RoomExtraData)."""
+    the way the integration writes it (RoomState → RoomExtraData), saved at
+    ``saved_at`` (a timestamp; now by default)."""
     state = RoomState(**fields)
     mock_restore_cache_with_extra_data(
         hass, [(State(KITCHEN_WEIGHT, str(state.weight)), RoomExtraData(state, unit).as_dict())]
     )
+    if saved_at is not None:
+        stored = restore_state.async_get(hass).last_states[KITCHEN_WEIGHT]
+        stored.last_seen = dt_util.utc_from_timestamp(saved_at)
 
 
 @pytest.fixture(autouse=True)
@@ -976,12 +982,24 @@ async def test_total_outage_with_instant_dropout_holds_until_stale_limit(
     assert hass.states.get(TEMPERATURE).state == STATE_UNAVAILABLE
 
 
-@pytest.mark.parametrize(("downtime_minutes", "reading_used"), [(2, True), (120, False)])
-async def test_restored_reading_used_only_after_a_short_downtime(
-    hass: HomeAssistant, downtime_minutes: int, reading_used: bool
+@pytest.mark.parametrize(
+    ("missing_before_minutes", "downtime_minutes", "reading_used"),
+    [
+        (0, 2, True),  # a reboot
+        (0, 120, True),  # a long outage: time spent down doesn't age the reading
+        (4, 120, True),  # gone 4 minutes before it: 1 minute of the stale limit left
+        (6, 2, False),  # already stale when Home Assistant stopped
+    ],
+)
+async def test_restored_reading_bridges_an_outage_of_any_length(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    missing_before_minutes: int,
+    downtime_minutes: int,
+    reading_used: bool,
 ) -> None:
-    """A reboot is bridged by saved readings; a long outage isn't."""
     now = dt_util.utcnow().timestamp()
+    stopped = now - downtime_minutes * 60
     restore_room_state(
         hass,
         weight=1.0,
@@ -990,8 +1008,10 @@ async def test_restored_reading_used_only_after_a_short_downtime(
         status=Status.PERSON,
         last_occupied_state=Status.PERSON,
         last_known_temperature=30.0,
-        last_update=now,
-        last_seen=now - downtime_minutes * 60,
+        saved_at=stopped,
+        last_seen=stopped - missing_before_minutes * 60,
+        dropout_since=stopped - missing_before_minutes * 60 if missing_before_minutes else None,
+        stale=missing_before_minutes > 5,
     )
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)  # not back yet
     set_temperature(hass, "office", "20")
@@ -1003,6 +1023,13 @@ async def test_restored_reading_used_only_after_a_short_downtime(
         assert temperature == pytest.approx(30.0, abs=0.05)  # the kitchen's saved 30°
     else:
         assert temperature == pytest.approx(20.0)  # only the office counts
+
+    # The stale limit (5 minutes) still runs from startup, less any time missing before.
+    if reading_used:
+        await advance(hass, freezer, 5 - missing_before_minutes)
+        assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_stale"] is False
+        await advance(hass, freezer, 1)
+        assert hass.states.get(KITCHEN_WEIGHT).attributes["temperature_stale"] is True
 
 
 # ---------------------------------------------------------------------------

@@ -342,7 +342,7 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `status` | `open`, `dropout`, `person`, `occupied`, or `unoccupied` — see [How it works](#how-it-works). |
 | `open` | `true` while an opening entity is on or the opening template is true; otherwise `false`. |
 | `temperature_available` | Whether the room's temperature sensor currently has a usable reading. |
-| `temperature_stale` | `true` once the temperature sensor hasn't had a usable reading for longer than the stale limit (counted from when it was last seen working, so this can be `true` straight after a long downtime) — see [Fallback and stale sensors](#fallback-and-stale-sensors). |
+| `temperature_stale` | `true` once the temperature sensor hasn't had a usable reading for longer than the stale limit (counted from when it was last seen working; time Home Assistant spends down doesn't count) — see [Fallback and stale sensors](#fallback-and-stale-sensors). |
 | `person_present` | Whether a tracked person counts as present in this room, after the person enter and exit delays. |
 | `occupied` | The combined result of the room's occupancy sensors and occupancy template, after the occupancy enter and exit delays. |
 | `people` | The names of the people in this room while `person_present` is `true` — while an exit is delayed, the people last seen here. Empty otherwise. |
@@ -351,7 +351,7 @@ Its state is the room's current weight (a number between 0 and the largest of th
 | `tau_name` | Which tau that is: `person_rise`, `person_fall`, `occupancy_rise`, `occupancy_fall`, `open` or `dropout` — so you can see both the direction and the reason. |
 | `last_occupied_state` | The last status that was `person` or `occupied` (used to pick the correct fall tau); `null` if the room has never been occupied. |
 
-Each room's state is restored across a Home Assistant restart and when the zone is reloaded or reconfigured: its weight, status and last reading. The downtime itself isn't counted as elapsed time — the room resumes at the weight it had before rather than jumping as if time had passed. The saved reading is reused only if it's newer than the stale limit. A room whose weight sensor is disabled isn't saved, so it starts again from 0 after every restart or reload.
+Each room's state is restored across a Home Assistant restart and when the zone is reloaded or reconfigured: its weight, status and last reading. The downtime itself isn't counted as elapsed time — the room resumes at the weight it had before rather than jumping as if time had passed. The saved reading is reused until the sensor reports again; it goes stale on the usual stale limit, counting only time Home Assistant is running. A room whose weight sensor is disabled isn't saved, so it starts again from 0 after every restart or reload.
 
 ### `Temperature` sensor
 
@@ -415,7 +415,7 @@ So an open room is used only when no closed room has a reading, and during a tot
 
 The `fallback` attribute turns `true` when this term's weight is more than the total weight of the rooms with a usable reading — your cue that the temperature is closer to a whole-home average than to an occupancy-weighted one.
 
-Last readings are saved across restarts, so a normal reboot doesn't make the output jump while sensors reconnect. After a longer downtime, readings older than the stale limit aren't reused; each room joins in again as soon as its sensor reports.
+Last readings are saved across restarts, so a reboot or a longer outage doesn't make the output jump while sensors reconnect: time Home Assistant spends down doesn't count toward the stale limit. A sensor that still hasn't reported once the stale limit has passed after startup goes stale as usual.
 
 The `Temperature` sensor becomes `unavailable` only when there's nothing at all to average — every room is either stale or has never reported a valid temperature.
 
