@@ -60,6 +60,7 @@ from custom_components.overengineered_occupied_room_temperature.storage import (
     RoomExtraData,
 )
 from custom_components.overengineered_occupied_room_temperature.zone import (
+    missing_entities_issue_id,
     repairs_issue_id,
     room_unique_id,
 )
@@ -2112,3 +2113,106 @@ async def test_a_delayed_exit_keeps_its_people_after_a_restart(
     await advance(hass, freezer, seconds=30)
     kitchen = hass.states.get(KITCHEN_WEIGHT).attributes
     assert (kitchen["status"], kitchen["people"]) == ("unoccupied", [])
+
+
+# ---------------------------------------------------------------------------
+# Renamed and missing source entities
+# ---------------------------------------------------------------------------
+
+
+def register(hass: HomeAssistant, entity_id: str) -> None:
+    """Give an entity a registry entry, as an integration's entity has."""
+    domain, object_id = entity_id.split(".")
+    er.async_get(hass).async_get_or_create(domain, "test", object_id, suggested_object_id=object_id)
+
+
+async def test_a_renamed_temperature_sensor_is_followed(hass: HomeAssistant) -> None:
+    register(hass, "sensor.kitchen_temperature")
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_zone(hass, [room("kitchen")])
+
+    er.async_get(hass).async_update_entity(
+        "sensor.kitchen_temperature", new_entity_id="sensor.kitchen_air"
+    )
+    await hass.async_block_till_done()
+    assert entry.options[CONF_ROOMS]["kitchen"][CONF_TEMPERATURE_SENSORS] == ["sensor.kitchen_air"]
+
+    hass.states.async_set(
+        "sensor.kitchen_air", "23", {"unit_of_measurement": "°C", "device_class": "temperature"}
+    )
+    await hass.async_block_till_done()
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(23.0)
+
+
+async def test_a_renamed_person_source_is_followed(hass: HomeAssistant) -> None:
+    register(hass, "sensor.alex_area")
+    set_temperature(hass, "kitchen", "20")
+    hass.states.async_set("sensor.alex_area", "Kitchen")
+    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+
+    er.async_get(hass).async_update_entity("sensor.alex_area", new_entity_id="sensor.alex_room")
+    await hass.async_block_till_done()
+    assert entry.options[CONF_PEOPLE]["alex"][CONF_SOURCE_ENTITY] == "sensor.alex_room"
+    hass.states.async_set("sensor.alex_room", "Kitchen")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == ["Alex"]
+
+
+async def test_missing_entities_raise_an_issue_that_clears_when_they_appear(
+    hass: HomeAssistant,
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    office = room("office", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.office_motion"]})
+    entry = await setup_zone(hass, [room("kitchen"), office])  # the office has no reading either
+    issues = ir.async_get(hass)
+    issue = issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry))
+    assert issue is not None
+    assert issue.translation_placeholders == {
+        "zone": "Home",
+        "entities": "binary_sensor.office_motion (Office), sensor.office_temperature (Office)",
+    }
+
+    hass.states.async_set("binary_sensor.office_motion", "off")
+    set_temperature(hass, "office", "24")
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry)) is None
+
+
+async def test_a_deleted_entity_raises_the_issue(hass: HomeAssistant) -> None:
+    register(hass, "sensor.kitchen_temperature")
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_zone(hass, [room("kitchen")])
+    issues = ir.async_get(hass)
+    assert issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry)) is None
+
+    er.async_get(hass).async_remove("sensor.kitchen_temperature")
+    hass.states.async_remove("sensor.kitchen_temperature")
+    await hass.async_block_till_done()
+    issue = issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry))
+    assert issue is not None
+    assert issue.translation_placeholders["entities"] == "sensor.kitchen_temperature (Kitchen)"
+
+
+async def test_entities_count_as_missing_only_once_home_assistant_has_started(
+    hass: HomeAssistant,
+) -> None:
+    hass.set_state(CoreState.not_running)
+    motion = {CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}
+    entry = await setup_zone(hass, [room("kitchen", **motion)])
+    hass.states.async_set("binary_sensor.kitchen_motion", "off")  # loads; the sensor hasn't yet
+    await hass.async_block_till_done()
+    issues = ir.async_get(hass)
+    assert issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry)) is None
+
+    set_temperature(hass, "kitchen", "20")
+    await start_home_assistant(hass)
+    assert issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry)) is None
+
+
+async def test_unloading_a_zone_clears_its_missing_entities_issue(hass: HomeAssistant) -> None:
+    entry = await setup_zone(hass, [room("kitchen")])
+    issues = ir.async_get(hass)
+    assert issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry)) is not None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, missing_entities_issue_id(entry)) is None

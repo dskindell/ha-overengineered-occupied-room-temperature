@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -30,6 +31,7 @@ from homeassistant.helpers.event import (
     TrackTemplate,
     TrackTemplateResult,
     async_call_later,
+    async_track_entity_registry_updated_event,
     async_track_point_in_utc_time,
     async_track_state_change_event,
     async_track_template_result,
@@ -168,6 +170,11 @@ def repairs_issue_id(entry: ConfigEntry) -> str:
     return f"no_occupancy_source_{entry.entry_id}"
 
 
+def missing_entities_issue_id(entry: ConfigEntry) -> str:
+    """ID of the zone's Repairs issue for configured entities that don't exist."""
+    return f"missing_entities_{entry.entry_id}"
+
+
 def room_attributes(room: Room) -> dict[str, Any]:
     """The attributes of a room's weight sensor."""
     state = room.state
@@ -238,6 +245,18 @@ class ZoneRuntime:
         self._cancel_deadline: Callable[[], None] | None = None
         self._deadline: float | None = None
         self._listeners: list[Callable[[], None]] = []
+        # Each configured entity and the rooms and people that use it.
+        self._sources: dict[str, list[str]] = {}
+        for room in self.rooms.values():
+            for entity_id in (
+                *room.temperature_sensors,
+                *room.occupancy_sensors,
+                *room.opening_sensors,
+            ):
+                self._sources.setdefault(entity_id, []).append(room.name)
+        for person in self.people:
+            self._sources.setdefault(person.source_entity, []).append(person.name)
+        self._checking_missing = False
 
     def _template(self, value: str | None) -> Template | None:
         return Template(value, self.hass) if value else None
@@ -343,6 +362,14 @@ class ZoneRuntime:
             entry.async_on_unload(
                 async_track_state_change_event(self.hass, sorted(watched), self._async_on_state)
             )
+        if self._sources:
+            entry.async_on_unload(
+                async_track_entity_registry_updated_event(
+                    self.hass, sorted(self._sources), self._async_on_registry
+                )
+            )
+        # Other integrations' entities may not exist until Home Assistant has started.
+        entry.async_on_unload(async_at_started(self.hass, self._async_start_missing_check))
 
         for room in self.rooms.values():
             for kind, template in (
@@ -435,11 +462,67 @@ class ZoneRuntime:
         else:
             ir.async_delete_issue(self.hass, DOMAIN, repairs_id)
 
+    @callback
+    def _async_start_missing_check(self, _hass: HomeAssistant) -> None:
+        self._checking_missing = True
+        self._async_update_missing()
+
+    @callback
+    def _async_update_missing(self) -> None:
+        """Warn about configured entities with neither a registry entry nor a state."""
+        if not self._checking_missing:
+            return
+        registry = er.async_get(self.hass)
+        missing = [
+            f"{entity_id} ({', '.join(dict.fromkeys(users))})"
+            for entity_id, users in sorted(self._sources.items())
+            if registry.async_get(entity_id) is None and self.hass.states.get(entity_id) is None
+        ]
+        issue_id = missing_entities_issue_id(self.entry)
+        if missing:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="missing_entities",
+                translation_placeholders={"zone": self.entry.title, "entities": ", ".join(missing)},
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    @callback
+    def _async_on_registry(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        """Follow a renamed entity; re-check for missing entities otherwise."""
+        data = event.data
+        old = data.get("old_entity_id") if data["action"] == "update" else None
+        if old is not None and old != data["entity_id"]:
+            self._async_follow_rename(old, data["entity_id"])
+        else:
+            self._async_update_missing()
+
+    @callback
+    def _async_follow_rename(self, old: str, new: str) -> None:
+        """Point the zone's options at the entity's new ID; saving them reloads the zone."""
+        _LOGGER.info("Zone %s: %s was renamed to %s", self.entry.title, old, new)
+        options = deepcopy(dict(self.entry.options))
+        for room in options[CONF_ROOMS].values():
+            for key in (CONF_TEMPERATURE_SENSORS, CONF_OCCUPANCY_SENSORS, CONF_OPENING_SENSORS):
+                if key in room:
+                    room[key] = [new if entity_id == old else entity_id for entity_id in room[key]]
+        for person in options[CONF_PEOPLE].values():
+            if person[CONF_SOURCE_ENTITY] == old:
+                person[CONF_SOURCE_ENTITY] = new
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+
     # -- triggers -------------------------------------------------------------
 
     @callback
     def _async_on_state(self, event: Event[EventStateChangedData]) -> None:
         old, new = event.data["old_state"], event.data["new_state"]
+        if old is None or new is None:
+            self._async_update_missing()  # the entity appeared or went away
         if (
             old is not None
             and new is not None

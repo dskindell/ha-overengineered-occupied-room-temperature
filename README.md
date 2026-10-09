@@ -430,10 +430,13 @@ When Home Assistant itself is starting, OORT holds every room's weight at whatev
 - Each zone creates a single device holding all of its room-weight and temperature sensors, rather than one device per room. Room sensors won't appear on their own room's area page in Home Assistant unless you manually assign each `<Room> weight` entity to that area (**Settings → Devices & services → Entities**).
 - No HACS listing yet; manual installation only.
 - A room's area can't be changed after the room is created — remove and re-add it instead.
+- When you rename an entity a zone uses (a temperature, occupancy or opening sensor, or a person's location entity), the zone follows the new entity ID by itself and reloads. Entity IDs written inside templates aren't updated — edit those yourself.
 
 ## Troubleshooting
 
 **Repairs shows "Some OORT rooms can never count as occupied".** This fires when a room has no occupancy sensors, no occupancy template, and the zone has no people configured — so that room can only ever sit at its unoccupied weight. Add occupancy sensors or a template to the room, or add a person to the zone — both from the zone's **Configure** menu. The issue clears automatically once either is true, or if the room is removed.
+
+**Repairs shows "Some entities used by an OORT zone don't exist".** An entity the zone uses — a room's temperature, occupancy or opening sensor, or a person's location entity — has no registry entry and no state, once Home Assistant has started. The issue lists each one with the rooms or people using it. Usually the entity was deleted or its integration removed (renamed entities are followed automatically). Open the zone's **Configure** menu and choose a replacement, or bring the entity back; the issue clears itself once every entity exists.
 
 **The `Temperature` sensor is `unavailable`.** Every configured room's temperature sensor is either stale (unavailable for longer than the stale limit) or has never reported a usable value. Check each room's `temperature_available` and `temperature_stale` attributes to find the affected sensor(s).
 

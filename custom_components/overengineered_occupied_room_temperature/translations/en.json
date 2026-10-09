@@ -516,6 +516,10 @@
     "no_occupancy_source": {
       "title": "Some OORT rooms can never count as occupied",
       "description": "In the OORT zone \"{zone}\", these rooms have no occupancy sensors or occupancy template, and the zone has no people: {rooms}. They will always use the unoccupied weight. Open the zone's Configure menu to add people, or occupancy sensors or a template to these rooms."
+    },
+    "missing_entities": {
+      "title": "Some entities used by an OORT zone don't exist",
+      "description": "In the OORT zone \"{zone}\", these entities don't exist, so the rooms or people using them (in brackets) can't work: {entities}. Renamed entities are followed automatically; these were deleted, or never existed. Open the zone's Configure menu and choose a replacement, or restore the entity. This clears itself once every entity exists."
     }
   },
   "entity": {
