@@ -72,7 +72,7 @@ from .engine import (
     RoomState,
     step_zone,
 )
-from .storage import saved_room_state, saved_unit
+from .storage import saved_room_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -273,17 +273,12 @@ class ZoneRuntime:
         return value if math.isfinite(value) else None
 
     @callback
-    def _restore_room(
-        self, room: Room, state: RoomState, unit: str | None, downtime: float
-    ) -> None:
+    def _restore_room(self, room: Room, state: RoomState, downtime: float) -> None:
         """Seed a room with saved state; the downtime isn't applied as elapsed time.
 
         That includes the stale clock: a saved reading ages only while Home
         Assistant runs, so after a long outage it bridges until the sensor reports.
         """
-        temperature = state.last_known_temperature
-        if temperature is not None:
-            temperature = self._in_zone_unit(temperature, unit)
         dropout_since = state.dropout_since
         clock = dropout_since if dropout_since is not None else state.last_seen
         if clock is not None and not state.stale:
@@ -291,7 +286,6 @@ class ZoneRuntime:
         room.state = replace(
             state,
             last_update=None,
-            last_known_temperature=temperature,
             dropout_since=dropout_since,
         )
 
@@ -329,7 +323,7 @@ class ZoneRuntime:
             if (state := saved_room_state(data)) is not None:
                 # Home Assistant saves states at shutdown, every 15 minutes and at unload.
                 downtime = max(0.0, now - stored.last_seen.timestamp())
-                self._restore_room(room, state, saved_unit(data), downtime)
+                self._restore_room(room, state, downtime)
                 # While an exit is delayed the people have gone, so show who was there.
                 people = stored.state.attributes.get("people")
                 if state.person_present and isinstance(people, list):

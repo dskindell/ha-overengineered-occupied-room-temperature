@@ -23,7 +23,6 @@ from .engine import RoomState, Status, TauName
 # Bump when a field's meaning changes, and convert older data in saved_room_state.
 SAVED_VERSION: Final = 1
 KEY_VERSION: Final = "version"
-KEY_UNIT: Final = "temperature_unit"
 # A restored room is stepped afresh: its inputs are replaced and the downtime
 # isn't counted, so neither is saved.
 _UNSAVED: Final = frozenset({"inputs", "last_update"})
@@ -32,24 +31,13 @@ _FIELDS: Final = frozenset(field.name for field in fields(RoomState)) - _UNSAVED
 
 @dataclass(frozen=True, slots=True)
 class RoomExtraData(ExtraStoredData):
-    """A room's engine state and the unit of its saved reading."""
+    """A room's engine state; its reading is in the zone's unit, which never changes."""
 
     state: RoomState
-    temperature_unit: str
 
     def as_dict(self) -> dict[str, Any]:
         saved = {key: value for key, value in asdict(self.state).items() if key in _FIELDS}
-        return {
-            **saved,
-            KEY_UNIT: self.temperature_unit,
-            KEY_VERSION: SAVED_VERSION,
-        }
-
-
-def saved_unit(data: Mapping[str, Any]) -> str | None:
-    """The unit a saved room reading is in; None if none was saved."""
-    unit = data.get(KEY_UNIT)
-    return unit if isinstance(unit, str) else None
+        return {**saved, KEY_VERSION: SAVED_VERSION}
 
 
 def _number(value: Any) -> float | None:

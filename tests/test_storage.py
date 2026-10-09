@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from custom_components.overengineered_occupied_room_temperature.const import CONF_TEMPERATURE_UNIT
 from custom_components.overengineered_occupied_room_temperature.engine import (
     RoomInputs,
     RoomState,
@@ -24,15 +23,14 @@ from tests.helpers import SAVED
 
 
 def test_saved_state_records_its_version() -> None:
-    data = RoomExtraData(RoomState(weight=0.5), "°C").as_dict()
+    data = RoomExtraData(RoomState(weight=0.5)).as_dict()
     assert data["version"] == SAVED_VERSION == 1
-    assert data[CONF_TEMPERATURE_UNIT] == "°C"
     assert saved_room_state(data) == RoomState(weight=0.5)
 
 
 def test_inputs_and_update_time_are_not_saved_or_restored() -> None:
     state = RoomState(weight=0.5, last_update=200.0, inputs=RoomInputs(False, False, True, 20.0))
-    data = RoomExtraData(state, "°C").as_dict()
+    data = RoomExtraData(state).as_dict()
     assert "inputs" not in data
     assert "last_update" not in data
     restored = saved_room_state({**data, "inputs": {"open": True}, "last_update": 200.0})
@@ -96,7 +94,7 @@ def test_every_saved_field_is_read_back() -> None:
     )
     unset = [f.name for f in fields(RoomState) if getattr(state, f.name) == f.default]
     assert unset == ["last_update", "inputs"], "set every saved field above"
-    assert saved_room_state(RoomExtraData(state, "°C").as_dict()) == state
+    assert saved_room_state(RoomExtraData(state).as_dict()) == state
 
 
 @pytest.mark.parametrize(
