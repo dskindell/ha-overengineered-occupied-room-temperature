@@ -21,7 +21,7 @@ repos:
     rev: v1.7.12.25
     hooks:
       - id: actionlint
-        files: ^\.gitea/workflows/
+        files: ^\.github/workflows/
 
   - repo: local
     hooks:
