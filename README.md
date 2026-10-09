@@ -76,7 +76,7 @@ Then follow the [Quick start](#quick-start).
 
    [![Open your Home Assistant instance and start setting up OORT.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=overengineered_occupied_room_temperature)
 3. In the zone menu, choose **Rooms**, then **Add a new room**. Pick the room's area, its temperature sensor, and its motion or occupancy sensors, and submit. Repeat for each room the HVAC serves, then choose **Done**.
-4. Optional: choose **People** and add each person whose room you can track, using an entity whose state (or an attribute) is the area they're in. With the default settings, a tracked person counts twice as much as an occupancy sensor.
+4. Optional: choose **People** and add each person whose room you can track, using an entity whose state (or an attribute) is the area they're in. With the default settings, a tracked person counts 2.5 times as much as an occupancy sensor (1.0 against 0.4).
 5. Choose **Finish**. The default settings suit most homes.
 6. [Point your thermostat](#pointing-your-thermostat-at-oort) at `sensor.oort_home_temperature`. You can leave the thermostat as it is for a day or two first and compare the new sensor with your current reading.
 
@@ -178,7 +178,7 @@ If your air conditioning only serves some rooms, leave the others out while cool
 {{ is_state('climate.house', 'cool') }}
 ```
 
-A climate entity's state is its HVAC mode, so this is true while the system is set to cool. The rooms rejoin when it's set back to heat.
+A climate entity's state is its HVAC mode, so this is true while the system is set to cool. The rooms rejoin when it's set back to heat. In a heat/cool or auto mode the template stays false, so those rooms stay counted even while the AC runs.
 
 ### Count the bedroom once someone has gone to bed
 
@@ -214,7 +214,7 @@ Rooms and people belong to their zone and are managed only from that zone's menu
 
 1. **Name the zone** (for example "Home"). The name must not already be used by another OORT zone.
 2. **The zone menu** opens, showing the rooms and people added so far:
-   - **Settings** — the rooms' default taus and weights, and the zone-wide stale-temperature limit (see below). Optional: the defaults work for most homes.
+   - **Settings** — the rooms' default taus, delays and weights, and the zone-wide stale-temperature limit (see below). Optional: the defaults work for most homes.
    - **Rooms** — add, edit or remove rooms.
    - **People** — add, edit or remove people.
    - **Finish** — creates the zone. It appears once the zone has at least one room.
@@ -254,15 +254,15 @@ Times are in minutes. A **tau** is a time constant: roughly how long a room's we
 
 Validation: person and occupancy taus must be greater than 0; open and dropout taus and delays can't be negative; weights can't be negative; the unoccupied weight must be at least 0.001 and the stale limit greater than 0. Upper limits: taus and the stale limit at most 1440 minutes (a day), delays at most 60 minutes, weights at most 1.
 
-A delay is timed from when the change starts; a change that reverts before its delay is up is forgotten, and the next one starts its own delay. Delays apply to the room, not to each person: a person enter delay is how long the room must have *someone* in it without a break, so if one person walks in just before another leaves, the wait carries on from the first arrival — and people coming and going with gaps in between never count. Delays carry on across a restart. A delay and the tau add up: a person with a 1-minute enter delay starts pulling the weight up after that minute, at the person rise tau; with a 2-minute exit delay, the weight starts falling 2 minutes after they leave, at the person fall tau.
+A delay is timed from when the change starts; a change that reverts before its delay is up is forgotten, and the next one starts its own delay. Delays apply to the room, not to each person: a person enter delay is how long the room must have *someone* in it without a break, so if one person walks in just before another leaves, the wait carries on from the first arrival — and people coming and going with gaps in between never count. Delays carry on across a restart, and time spent down counts toward them. A delay and the tau add up: a person with a 1-minute enter delay starts pulling the weight up after that minute, at the person rise tau; with a 2-minute exit delay, the weight starts falling 2 minutes after they leave, at the person fall tau.
 
 ### Tuning the taus
 
 The defaults suit most homes. These charts show what they do, and how a different tau would change it.
 
-With the default settings, a room's weight rises like this when someone arrives:
+With the default settings, a room's weight rises like this when someone arrives. It starts rising after the enter delay (1 minute by default):
 
-![Weight rising with the default settings: a tracked person takes a room from 0 to 0.63 in 2 minutes, an occupancy sensor from 0 to 0.25 in 10 minutes](docs/images/default-rise.svg)
+![Weight rising with the default settings: after a 1-minute enter delay, a tracked person takes a room from 0 to 0.63 by minute 3, an occupancy sensor from 0 to 0.25 by minute 11](docs/images/default-rise.svg)
 
 and falls like this when something changes:
 
@@ -312,7 +312,7 @@ Taus and delays can be set for the whole zone on the **Settings** screen, or for
 | Overrides (collapsed) | Any of the taus, delays and weights above, for this room only. Leave a field blank to use the zone's default. |
 | Remove this room | Only when editing: removes the room when you submit. |
 
-If you save a room with no occupancy sensors and no occupancy template while the zone has no people yet, a note says the room can never count as occupied. Continue to save it anyway — for example if you're about to add people.
+If you save a room with no occupancy sensors and no occupancy template while the zone has no people yet, a note says the room can never count as occupied. The room is saved anyway — useful if you're about to add people.
 
 ### People
 
@@ -388,7 +388,7 @@ recorder:
       - sensor.oort_*_weight
 ```
 
-Excluded weight sensors keep working, and the zone's temperature still uses them. They lose their history graphs, logbook entries and long-term statistics.
+Excluded weight sensors keep working, and the zone's temperature still uses them. They lose their history graphs and long-term statistics.
 
 ## Fallback and stale sensors
 
@@ -419,7 +419,7 @@ Last readings are saved across restarts, so a normal reboot doesn't make the out
 
 The `Temperature` sensor becomes `unavailable` only when there's nothing at all to average — every room is either stale or has never reported a valid temperature.
 
-So during a total sensor outage the thermostat gets the last readings for at most the stale limit (5 minutes by default), then `unavailable`. If your thermostat can turn itself off when its sensor is unavailable — `dual_smart_thermostat`'s `sensor_stale_duration`, for example — set that too, a little longer than OORT's stale limit.
+So during a total sensor outage the thermostat gets the last readings for at most the stale limit (5 minutes by default), then `unavailable`. If your thermostat can turn itself off when its sensor is unavailable — the `sensor_stale_duration` option of the custom `dual_smart_thermostat` integration, for example — set that too, a little longer than OORT's stale limit.
 
 ## Startup grace period
 

@@ -26,6 +26,7 @@ from custom_components.overengineered_occupied_room_temperature.engine import (
     approach,
     delayed,
     fallback_epsilon,
+    pending_deadline,
     room_config,
     room_status,
     select_tau_name,
@@ -427,6 +428,10 @@ class TestAggregate:
         assert result.contributing_rooms == 2
         assert not result.fallback
 
+    def test_readings_too_large_to_average_give_no_temperature(self) -> None:
+        result = aggregate([sample(1.0, 1e308), sample(1.0, 1e308)], fallback_epsilon([0.001]))
+        assert result.temperature is None
+
     def test_empty_house_is_plain_average(self) -> None:
         eps = fallback_epsilon([0.001])
         result = aggregate([sample(0.001, 68.0), sample(0.001, 70.0), sample(0.001, 72.0)], eps)
@@ -708,6 +713,11 @@ class TestDelays:
         state = step_room(state, inputs(), self.CONFIG, 60.0)
         state = step_room(state, inputs(), self.CONFIG, 60.0 + 2 * MINUTE)
         assert state.status is Status.OCCUPIED  # exit delay 3 min
+
+    def test_a_room_reports_its_earliest_deadline(self) -> None:
+        # A person and motion arrive together: occupancy (0.5 min) counts before the person (1 min).
+        state = step_room(self.EMPTY, inputs(person=True, occupied=True), self.CONFIG, 100.0)
+        assert pending_deadline(state, self.CONFIG.delays) == 130.0
 
     def test_the_zone_reports_the_earliest_deadline(self) -> None:
         present = step_room(RoomState(), inputs(person=True), self.CONFIG, 0.0)

@@ -715,6 +715,20 @@ async def test_configure_fills_in_settings_missing_from_an_older_zone(hass: Home
     assert entry.options[CONF_ZONE_SETTINGS] == stored_settings()[CONF_ZONE_SETTINGS]
 
 
+async def test_saving_an_older_zone_fills_in_new_settings_and_drops_retired_ones(
+    hass: HomeAssistant,
+) -> None:
+    entry = zone_entry(hass)
+    stored = {key: value for key, value in DEFAULTS.items() if key in ROOM_SETTINGS}
+    del stored["tau_dropout"]
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_DEFAULTS: {**stored, "retired_setting": 7}}
+    )
+    flow = await start_configure(hass, entry)
+    await flow.menu("save")  # without opening Settings
+    assert entry.options[CONF_DEFAULTS] == stored_settings()[CONF_DEFAULTS]
+
+
 @pytest.mark.parametrize("setting", SETTINGS, ids=lambda setting: setting.key)
 def test_every_setting_is_checked_against_its_limits(setting: Setting) -> None:
     assert validate_settings({setting.key: setting.default}) is None

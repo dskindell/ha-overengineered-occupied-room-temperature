@@ -450,18 +450,76 @@ async def test_all_rooms_open_uses_plain_average(
     assert float(temperature.state) == pytest.approx(22.0, abs=0.01)
 
 
-async def test_repairs_issue_when_no_occupancy_source(hass: HomeAssistant) -> None:
+async def test_fallback_alone_changing_rewrites_the_temperature(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Same readings, so only the fallback flag changes once the open rooms have faded."""
     set_temperature(hass, "kitchen", "20")
-    entry = await setup_zone(hass, [room("kitchen")])
+    set_temperature(hass, "office", "20")
+    hass.states.async_set("input_boolean.windows_open", "off")
+    opening = {CONF_OPENING_SENSORS: ["input_boolean.windows_open"]}
+    await setup_zone(hass, [room("kitchen", **opening), room("office", **opening)], tau_open=2.0)
+    await advance(hass, freezer, 60)
+
+    hass.states.async_set("input_boolean.windows_open", "on")
+    await hass.async_block_till_done()
+    await advance(hass, freezer, 8)  # weights below what counts as contributing
+    temperature = hass.states.get(TEMPERATURE)
+    assert (temperature.state, temperature.attributes["contributing_rooms"]) == ("20.0", 0)
+    assert temperature.attributes["fallback"] is False
+
+    await advance(hass, freezer, 8)  # and now below the fallback term's weight
+    temperature = hass.states.get(TEMPERATURE)
+    assert temperature.state == "20.0"
+    assert temperature.attributes["fallback"] is True
+
+
+async def test_repairs_issue_lists_only_rooms_without_an_occupancy_source(
+    hass: HomeAssistant,
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    set_temperature(hass, "office", "24")
+    office = room("office", **{CONF_OCCUPANCY_SENSORS: ["binary_sensor.office_motion"]})
+    entry = await setup_zone(hass, [room("kitchen"), office])
     issue = ir.async_get(hass).async_get_issue(DOMAIN, repairs_issue_id(entry))
     assert issue is not None
     assert issue.translation_placeholders == {"zone": "Home", "rooms": "Kitchen"}
+
+
+async def test_repairs_issue_clears_when_a_person_is_added_and_returns_without_one(
+    hass: HomeAssistant,
+) -> None:
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_zone(hass, [room("kitchen")])
+    issues = ir.async_get(hass)
+    assert issues.async_get_issue(DOMAIN, repairs_issue_id(entry)) is not None
+
+    _, key, alex = person("Alex", "sensor.alex_area")
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_PEOPLE: {key: alex}}
+    )
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, repairs_issue_id(entry)) is None
+
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_PEOPLE: {}})
+    await hass.async_block_till_done()
+    assert issues.async_get_issue(DOMAIN, repairs_issue_id(entry)) is not None
 
 
 async def test_no_repairs_issue_when_people_exist(hass: HomeAssistant) -> None:
     set_temperature(hass, "kitchen", "20")
     entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
     assert ir.async_get(hass).async_get_issue(DOMAIN, repairs_issue_id(entry)) is None
+
+
+async def test_a_removed_temperature_sensor_is_a_dropout_at_once(hass: HomeAssistant) -> None:
+    set_temperature(hass, "kitchen", "20")
+    await setup_zone(hass, [room("kitchen")])
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "unoccupied"
+
+    hass.states.async_remove("sensor.kitchen_temperature")
+    await hass.async_block_till_done()
+    assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "dropout"
 
 
 async def test_removing_a_room_removes_its_entity(hass: HomeAssistant) -> None:
@@ -844,18 +902,25 @@ async def test_renaming_a_zone_renames_its_device_not_its_entity_ids(
 
 
 @pytest.mark.parametrize(
-    ("state", "attributes", "attribute"),
+    ("state", "attributes", "attribute", "value_type"),
     [
-        ("unavailable", {}, None),  # the location is unknown
-        ("Kitchen", {}, "area_id"),  # the chosen attribute isn't there
+        ("unavailable", {}, None, "area_name"),  # the location is unknown
+        ("Kitchen", {}, "area_id", "area_name"),  # the chosen attribute isn't there
+        ("Kitchen", {}, None, "area_id"),  # a name where an area ID is expected
     ],
 )
 async def test_person_with_unusable_location_is_in_no_room(
-    hass: HomeAssistant, state: str, attributes: dict[str, str], attribute: str | None
+    hass: HomeAssistant,
+    state: str,
+    attributes: dict[str, str],
+    attribute: str | None,
+    value_type: str,
 ) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", state, attributes)
-    fields = {CONF_SOURCE_ATTRIBUTE: attribute} if attribute else {}
+    fields: dict[str, str] = {CONF_VALUE_TYPE: value_type}
+    if attribute:
+        fields[CONF_SOURCE_ATTRIBUTE] = attribute
     await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area", **fields)])
     assert hass.states.get(KITCHEN_WEIGHT).attributes["people"] == []
 
@@ -935,7 +1000,7 @@ async def test_restored_reading_used_only_after_a_short_downtime(
     assert kitchen.attributes["temperature_stale"] is not reading_used
     temperature = float(hass.states.get(TEMPERATURE).state)
     if reading_used:
-        assert temperature > 25.0  # the kitchen's saved 30° still dominates
+        assert temperature == pytest.approx(30.0, abs=0.05)  # the kitchen's saved 30°
     else:
         assert temperature == pytest.approx(20.0)  # only the office counts
 
@@ -952,14 +1017,14 @@ async def test_temperature_change_does_not_rewrite_room_weights(
     set_temperature(hass, "office", "24")
     await setup_zone(hass, [room("kitchen"), room("office")])
     await advance(hass, freezer, 5)
-    kitchen_before = hass.states.get(KITCHEN_WEIGHT)
+    kitchen_reported = hass.states.get(KITCHEN_WEIGHT).last_reported
     temperature_before = hass.states.get(TEMPERATURE)
 
     freezer.tick(timedelta(seconds=5))
     set_temperature(hass, "office", "23")
     await hass.async_block_till_done()
 
-    assert hass.states.get(KITCHEN_WEIGHT).last_reported == kitchen_before.last_reported, (
+    assert hass.states.get(KITCHEN_WEIGHT).last_reported == kitchen_reported, (
         "a temperature reading must not rewrite the weight sensors"
     )
     assert hass.states.get(TEMPERATURE).last_updated > temperature_before.last_updated
@@ -979,13 +1044,13 @@ async def test_status_change_rewrites_that_room_at_once(
         ],
     )
     await advance(hass, freezer, 5)
-    office_before = hass.states.get(OFFICE_WEIGHT)
+    office_reported = hass.states.get(OFFICE_WEIGHT).last_reported
 
     freezer.tick(timedelta(seconds=5))
     hass.states.async_set("binary_sensor.kitchen_motion", "on")
     await hass.async_block_till_done()
     assert hass.states.get(KITCHEN_WEIGHT).attributes["status"] == "occupied"
-    assert hass.states.get(OFFICE_WEIGHT).last_reported == office_before.last_reported
+    assert hass.states.get(OFFICE_WEIGHT).last_reported == office_reported
 
 
 async def test_stored_values_are_rounded(
@@ -1008,27 +1073,27 @@ async def test_settled_weights_stop_changing(
     set_temperature(hass, "kitchen", "20")
     await setup_zone(hass, [room("kitchen")])
     await advance(hass, freezer, 120)
-    before = hass.states.get(KITCHEN_WEIGHT)
+    reported = hass.states.get(KITCHEN_WEIGHT).last_reported
     await advance(hass, freezer, 5)
-    after = hass.states.get(KITCHEN_WEIGHT)
-    assert after.last_updated == before.last_updated  # no new value or attribute, so no new row
+    assert hass.states.get(KITCHEN_WEIGHT).last_reported == reported  # not written at all
 
 
 async def test_temperature_sensor_not_rewritten_when_nothing_visible_changes(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    """An update that changes nothing shown must not create a new recorder row."""
+    """An update that changes nothing shown must not write the sensor at all."""
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.alex_area", "Kitchen")
     await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
     await advance(hass, freezer, 60)
-    before = hass.states.get(TEMPERATURE)
+    reported = hass.states.get(TEMPERATURE).last_reported
 
-    freezer.tick(timedelta(seconds=5))
-    hass.states.async_set("sensor.alex_area", "Kitchen", {"rssi": -70})  # attribute-only
+    await advance(hass, freezer, 5)  # the minute timer recalculates; nothing shown changes
+    set_temperature(hass, "office", "24.01")  # a new reading that doesn't move the rounded value
     await hass.async_block_till_done()
-    assert hass.states.get(TEMPERATURE).last_updated == before.last_updated
+    # Home Assistant moves last_reported, not last_updated, when the same state is written.
+    assert hass.states.get(TEMPERATURE).last_reported == reported
 
 
 async def test_changing_unrecognised_template_result_warns_once(
@@ -1155,11 +1220,9 @@ async def test_unit_system_change_and_reload_never_double_convert(hass: HomeAssi
     await hass.async_block_till_done()
     assert entry.runtime_data.unit == "°C"
     temperature = hass.states.get(TEMPERATURE)
-    # Home Assistant keeps a registered sensor's unit; either way the value must match it.
-    if temperature.attributes["unit_of_measurement"] == "°C":
-        assert float(temperature.state) == pytest.approx(20.5, abs=0.01)
-    else:
-        assert float(temperature.state) == pytest.approx(68.9, abs=0.01)
+    # Home Assistant keeps a registered sensor's unit, so the zone's °C value shows as is.
+    assert temperature.attributes["unit_of_measurement"] == "°C"
+    assert float(temperature.state) == pytest.approx(20.5, abs=0.01)
 
 
 async def test_saved_reading_is_converted_if_the_unit_changed_while_down(
@@ -1243,11 +1306,11 @@ async def test_open_room_does_not_drive_the_output_during_an_outage(
     await hass.async_block_till_done()
     await advance(hass, freezer, 30)  # office weight fades too; its reading isn't stale yet
     # Only the open kitchen is live, but the closed office's recent reading wins.
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
 
     await advance(hass, freezer, 31)  # past the 60-minute stale limit
     # Nothing closed is left, so the open kitchen is used rather than going unavailable.
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(12.0, abs=0.1)
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(12.0, abs=0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -1304,7 +1367,7 @@ async def test_one_failing_entity_does_not_stop_the_others(
     entry.runtime_data._listeners.insert(0, fail)
     set_temperature(hass, "kitchen", "22")
     await hass.async_block_till_done()
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(22.0, abs=0.1)
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(22.0, abs=0.05)
     assert "Error updating an entity of zone Home" in caplog.text
 
 
@@ -1484,7 +1547,7 @@ async def test_open_room_leaves_the_output_at_once_with_open_tau_0(
     hass.states.async_set("binary_sensor.kitchen_window", "on")
     await hass.async_block_till_done()
     assert weight(hass, KITCHEN_WEIGHT) == 0.0
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
 
 
 async def test_dropped_out_room_leaves_the_output_at_once_with_dropout_tau_0(
@@ -1503,7 +1566,7 @@ async def test_dropped_out_room_leaves_the_output_at_once_with_dropout_tau_0(
     hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
     await hass.async_block_till_done()
     assert weight(hass, KITCHEN_WEIGHT) == 0.0
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.1)
+    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -1630,14 +1693,32 @@ async def test_reload_during_grace_ends_the_grace(
     await advance(hass, freezer, seconds=30)
     assert weight(hass, KITCHEN_WEIGHT) == 0.0
 
+    old_runtime = entry.runtime_data
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
-    await advance(hass, freezer, seconds=60)  # no grace after a reload
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1 / 3), abs=0.01)
+    with patch.object(old_runtime, "async_update") as old_update:
+        await advance(hass, freezer, seconds=60)  # no grace after a reload
+        assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-1 / 3), abs=0.01)
 
-    await advance(hass, freezer, seconds=60)  # past when the old zone's grace would have ended
-    assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-2 / 3), abs=0.01)
+        await advance(hass, freezer, seconds=60)  # past when the old zone's grace would have ended
+        assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1 - math.exp(-2 / 3), abs=0.01)
+    old_update.assert_not_called()
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_reload_before_home_assistant_starts_leaves_no_grace_behind(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    hass.set_state(CoreState.not_running)
+    set_temperature(hass, "kitchen", "20")
+    entry = await setup_zone(hass, [room("kitchen")])
+    old_runtime = entry.runtime_data
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    with patch.object(old_runtime, "async_update") as old_update:
+        await start_home_assistant(hass)
+        await advance(hass, freezer, seconds=150)  # past a grace period started then
+    old_update.assert_not_called()
 
 
 async def test_nothing_reaches_a_zone_after_it_is_unloaded(
@@ -1645,7 +1726,15 @@ async def test_nothing_reaches_a_zone_after_it_is_unloaded(
 ) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    hass.states.async_set("input_boolean.kitchen_busy", "off")
+    template = "{{ is_state('input_boolean.kitchen_busy', 'on') }}"
+    entry = await setup_zone(
+        hass,
+        [
+            room("kitchen", **{CONF_OCCUPANCY_TEMPLATE: template}),
+            person("Alex", "sensor.alex_area"),
+        ],
+    )
     runtime = entry.runtime_data
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -1654,6 +1743,7 @@ async def test_nothing_reaches_a_zone_after_it_is_unloaded(
     before = runtime.result
     set_temperature(hass, "kitchen", "25")
     hass.states.async_set("sensor.alex_area", "Office")
+    hass.states.async_set("input_boolean.kitchen_busy", "on")
     await advance(hass, freezer, seconds=180)
     assert [e for e, _ in seen if e.startswith("sensor.oort_")] == []
     assert runtime.result is before  # the runtime didn't recompute either
@@ -1690,13 +1780,13 @@ async def test_a_falling_weight_is_written_in_steps_and_when_it_settles(
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("binary_sensor.kitchen_motion", "on")
     motion = {CONF_OCCUPANCY_SENSORS: ["binary_sensor.kitchen_motion"]}
-    await setup_zone(hass, [room("kitchen", **motion)])
+    await setup_zone(hass, [room("kitchen", **motion)], w_occupied=0.5, tau_occupancy_fall=8.0)
     await advance(hass, freezer, 60)
     hass.states.async_set("binary_sensor.kitchen_motion", "off")
     await hass.async_block_till_done()
     seen = record_states(hass)
 
-    await advance(hass, freezer, 120)  # occupancy fall: 0.5 → 0.001 takes ~75 minutes
+    await advance(hass, freezer, 120)  # occupancy fall: 0.5 → 0.001 takes ~75 minutes at tau 8
     written = [float(state.state) for entity_id, state in seen if entity_id == KITCHEN_WEIGHT]
     assert written[-1] == 0.001  # the settled weight
     steps = [round(a - b, 4) for a, b in itertools.pairwise(written)]

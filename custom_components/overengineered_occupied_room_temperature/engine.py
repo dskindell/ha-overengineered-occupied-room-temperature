@@ -420,8 +420,10 @@ def aggregate(samples: Iterable[RoomSample], epsilon: float) -> Aggregate:
         numerator += epsilon * (sum(plain) / len(plain))
         denominator += epsilon
 
+    temperature = numerator / denominator if denominator > 0 else None
     return Aggregate(
-        temperature=numerator / denominator if denominator > 0 else None,
+        # Huge readings can overflow the sums; there's no temperature to give then.
+        temperature=temperature if temperature is not None and math.isfinite(temperature) else None,
         total_weight=total_weight,
         contributing_rooms=sum(s.weight >= CONTRIBUTING_WEIGHT for s in contributing),
         fallback=bool(plain) and epsilon > total_weight,
