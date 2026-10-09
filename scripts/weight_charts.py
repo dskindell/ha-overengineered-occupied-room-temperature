@@ -148,13 +148,14 @@ PERCENT_TICKS = [(v / 4, f"{v * 25}%") for v in range(5)]
 
 
 def rise_chart() -> Chart:
-    empty = settled(Status.UNOCCUPIED, WEIGHTS.base)
+    empty = replace(settled(Status.UNOCCUPIED, WEIGHTS.base), person_present=False, occupied=False)
+    delays = DEFAULT.delays
     return Chart(
         name="default-rise",
         title="Rising, with the default settings",
         subtitle=[
-            "Weight of an empty room after someone arrives at minute 0.",
-            "Dots mark one tau: 63% of the way there.",
+            "Weight of an empty room after someone arrives at minute 0; it starts",
+            "rising after the enter delay. Dots mark one tau after that: 63% of the way.",
         ],
         x_max=40,
         x_step=5,
@@ -167,7 +168,7 @@ def rise_chart() -> Chart:
                 one_room(empty, PERSON, 40),
                 tag_at=6,
                 tag_dy=18,
-                dots=[TAUS.person_rise],
+                dots=[delays.person_enter + TAUS.person_rise],
             ),
             Series(
                 f"An occupancy sensor turns on (occupancy rise tau, {TAUS.occupancy_rise:g} min)",
@@ -176,7 +177,7 @@ def rise_chart() -> Chart:
                 one_room(empty, OCCUPIED, 40),
                 tag_at=16,
                 tag_dy=18,
-                dots=[TAUS.occupancy_rise],
+                dots=[delays.occupancy_enter + TAUS.occupancy_rise],
             ),
         ],
     )
