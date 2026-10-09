@@ -37,8 +37,8 @@ CI runs all of these; the pre-commit hooks cover the fast ones.
 .venv/bin/python -m pytest --cov=custom_components/overengineered_occupied_room_temperature --cov-branch   # coverage must stay at 97% or more
 uvx ruff@0.16.9 check custom_components tests scripts
 uvx ruff@0.16.9 format --check custom_components tests scripts   # without --check it fixes the files
-uvx codespell@2.4.3 custom_components tests scripts README.md CONTRIBUTING.md .gitea pyproject.toml
-uvx --from actionlint-py==1.7.12.25 actionlint .gitea/workflows/*.yml
+uvx codespell@2.4.3 custom_components tests scripts README.md CONTRIBUTING.md .github pyproject.toml
+uvx --from actionlint-py==1.7.12.25 actionlint .github/workflows/*.yml
 .venv/bin/python scripts/check_rules.py references       # no references to design notes in the code
 uv pip install --python .venv/bin/python mypy==2.3.1
 .venv/bin/python -m mypy custom_components/overengineered_occupied_room_temperature   # strict

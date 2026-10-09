@@ -1,7 +1,7 @@
 {
   "domain": "overengineered_occupied_room_temperature",
   "name": "Overengineered Occupied-Room Temperature",
-  "codeowners": [],
+  "codeowners": ["@dskindell"],
   "config_flow": true,
   "documentation": "https://github.com/dskindell/ha-overengineered-occupied-room-temperature",
   "integration_type": "service",

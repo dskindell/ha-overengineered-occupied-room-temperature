@@ -1,5 +1,5 @@
-# Tests, coverage floor, lint, formatting, spelling, workflow lint, type checking, repository rules
-# and hassfest on every push to main (and on pull requests).
+# Tests, coverage floor, lint, formatting, spelling, workflow lint, type checking, repository rules,
+# hassfest and HACS validation on every push to main (and on pull requests).
 name: CI
 
 on:
@@ -7,6 +7,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -40,10 +43,10 @@ jobs:
         run: uvx ruff@0.16.9 format --check custom_components tests scripts
 
       - name: Spelling
-        run: uvx codespell@2.4.3 custom_components tests scripts README.md CONTRIBUTING.md .gitea pyproject.toml
+        run: uvx codespell@2.4.3 custom_components tests scripts README.md CONTRIBUTING.md .github pyproject.toml
 
       - name: Workflow lint
-        run: uvx --from actionlint-py==1.7.12.25 actionlint .gitea/workflows/*.yml
+        run: uvx --from actionlint-py==1.7.12.25 actionlint .github/workflows/*.yml
 
       - name: No design references in the code
         run: .venv/bin/python scripts/check_rules.py references
@@ -70,20 +73,20 @@ jobs:
           .venv/bin/python -m mypy custom_components/overengineered_occupied_room_temperature
 
   hassfest:
-    # Home Assistant's own integration validator (manifest, translations, config
-    # flow). Runs the same image as the home-assistant/actions/hassfest action.
-    # The checkout is copied in with `docker cp`: a bind mount would point at the
-    # runner host's filesystem, not this job's container.
+    # Home Assistant's own integration validator (manifest, translations, config flow).
     runs-on: ubuntu-latest
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
       - name: hassfest
-        run: |
-          id=$(docker create ghcr.io/home-assistant/hassfest)
-          docker cp . "$id":/github/workspace
-          status=0
-          docker start --attach "$id" || status=$?
-          docker rm "$id" > /dev/null
-          exit "$status"
+        uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    # The checks HACS runs before it lists a repository.
+    runs-on: ubuntu-latest
+    steps:
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
