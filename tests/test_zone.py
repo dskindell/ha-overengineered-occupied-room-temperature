@@ -215,7 +215,11 @@ async def test_person_pulls_the_temperature_toward_their_room(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_zone(hass, [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")])
+    await setup_zone(
+        hass,
+        [room("kitchen"), room("office"), person("Alex", "sensor.alex_area")],
+        tau_person_rise=3.0,
+    )
 
     kitchen = hass.states.get(KITCHEN_WEIGHT)
     assert kitchen.attributes["status"] == "person"
@@ -540,7 +544,8 @@ async def test_room_overrides_replace_zone_defaults(
 
     await advance(hass, freezer, 10)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(0.8 * (1 - math.exp(-1)), abs=5e-5)
-    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(1 - math.exp(-10 / 3), abs=5e-5)
+    office_rise = DEFAULTS["tau_person_rise"]
+    assert weight(hass, OFFICE_WEIGHT) == pytest.approx(1 - math.exp(-10 / office_rise), abs=5e-5)
 
 
 async def test_room_added_through_configure_appears_after_save(hass: HomeAssistant) -> None:
@@ -868,6 +873,7 @@ async def test_person_leaving_an_occupied_room_uses_person_fall(
             person("Alex", "sensor.alex_area"),
         ],
         tau_person_fall=3.0,
+        w_occupied=0.5,
     )
     await advance(hass, freezer, 60)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
@@ -1309,7 +1315,7 @@ async def test_re_added_room_starts_at_zero_not_its_old_state(
     set_temperature(hass, "kitchen", "20")
     set_temperature(hass, "office", "24")
     office = room("office", **{CONF_OCCUPANCY_TEMPLATE: "{{ true }}"})
-    entry = await setup_zone(hass, [room("kitchen"), office])
+    entry = await setup_zone(hass, [room("kitchen"), office], w_occupied=0.5)
     await advance(hass, freezer, 60)
     assert weight(hass, OFFICE_WEIGHT) == pytest.approx(0.5, abs=0.01)
 
@@ -1593,7 +1599,9 @@ async def test_grace_lasts_two_minutes_and_held_time_is_not_counted(
     hass.set_state(CoreState.not_running)
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    await setup_zone(
+        hass, [room("kitchen"), person("Alex", "sensor.alex_area")], tau_person_rise=3.0
+    )
     await start_home_assistant(hass)
 
     await advance(hass, freezer, seconds=119)
@@ -1615,7 +1623,9 @@ async def test_reload_during_grace_ends_the_grace(
     hass.set_state(CoreState.not_running)
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    entry = await setup_zone(
+        hass, [room("kitchen"), person("Alex", "sensor.alex_area")], tau_person_rise=3.0
+    )
     await start_home_assistant(hass)
     await advance(hass, freezer, seconds=30)
     assert weight(hass, KITCHEN_WEIGHT) == 0.0
@@ -1655,7 +1665,9 @@ async def test_changed_settings_take_effect_on_reload_without_a_jump(
 ) -> None:
     set_temperature(hass, "kitchen", "20")
     hass.states.async_set("sensor.alex_area", "Kitchen")
-    entry = await setup_zone(hass, [room("kitchen"), person("Alex", "sensor.alex_area")])
+    entry = await setup_zone(
+        hass, [room("kitchen"), person("Alex", "sensor.alex_area")], tau_person_rise=3.0
+    )
     await advance(hass, freezer, 60)
     assert weight(hass, KITCHEN_WEIGHT) == pytest.approx(1.0, abs=5e-5)
 

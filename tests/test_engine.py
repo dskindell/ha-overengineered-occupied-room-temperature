@@ -189,13 +189,15 @@ class TestPersonLeavesOccupiedRoom:
         )
         # The person leaves; the occupancy sensor is still on.
         state = step_room(state, inputs(occupied=True), config, 0.0)
+        occupied = config.weights.occupied
         assert (state.status, state.tau_name, state.target) == (
             Status.OCCUPIED,
             TauName.PERSON_FALL,
-            0.5,
+            occupied,
         )
         state = step_room(state, inputs(occupied=True), config, 2 * MINUTE)
-        assert state.weight == pytest.approx(0.5 + 0.5 * math.exp(-1))  # person fall, tau 2
+        # person fall, tau 2
+        assert state.weight == pytest.approx(occupied + (1 - occupied) * math.exp(-1))
         assert state.tau_name is TauName.PERSON_FALL  # still leaving person on later updates
 
         # The sensor turns off: sensor occupancy is what ends now.
@@ -221,10 +223,10 @@ class TestFallingIntoOccupied:
         state = step_room(state, inputs(occupied=True), CONFIG, MINUTE)  # motion returns
         assert (state.status, state.target, state.tau_name) == (
             Status.OCCUPIED,
-            0.5,
+            CONFIG.weights.occupied,
             TauName.PERSON_FALL,
         )
-        assert state.weight > 0.5
+        assert state.weight > CONFIG.weights.occupied
         state = step_room(state, inputs(occupied=True), CONFIG, 2 * MINUTE)
         assert state.tau_name is TauName.PERSON_FALL
 
@@ -235,7 +237,7 @@ class TestFallingIntoOccupied:
         state = step_room(state, inputs(occupied=True), CONFIG, 0.0)  # the person leaves
         state = step_room(state, inputs(open=True, occupied=True), CONFIG, 10.0)
         state = step_room(state, inputs(occupied=True), CONFIG, 20.0)  # closed again
-        assert state.weight > 0.5
+        assert state.weight > CONFIG.weights.occupied
         assert state.tau_name is TauName.PERSON_FALL
 
 
@@ -244,7 +246,7 @@ class TestStepRoom:
         state = step_room(RoomState(), inputs(person=True), CONFIG, 0.0)
         assert state.weight == 0.0
         assert state.target == 1.0
-        state = step_room(state, inputs(person=True), CONFIG, 3 * MINUTE)
+        state = step_room(state, inputs(person=True), CONFIG, CONFIG.taus.person_rise * MINUTE)
         assert state.weight == pytest.approx(1 - math.exp(-1))
 
     def test_piecewise_uses_previous_target_for_elapsed_time(self) -> None:
@@ -509,7 +511,7 @@ class TestAggregate:
 
 class TestRoomConfig:
     DEFAULTS: ClassVar[dict[str, float]] = {
-        "tau_person_rise": 3.0,
+        "tau_person_rise": 2.0,
         "tau_person_fall": 2.0,
         "tau_occupancy_rise": 10.0,
         "tau_occupancy_fall": 6.0,
@@ -520,7 +522,7 @@ class TestRoomConfig:
         "delay_occupancy_enter": 1.0,
         "delay_occupancy_exit": 0.0,
         "w_person": 1.0,
-        "w_occupied": 0.5,
+        "w_occupied": 0.4,
         "w_base": 0.001,
         "stale_limit": 5.0,
     }
@@ -530,7 +532,7 @@ class TestRoomConfig:
             self.DEFAULTS,
             {"tau_person_fall": 1.0, "w_occupied": 0.8, "delay_person_exit": 2.0},
         )
-        assert config.taus == Taus(3.0, 1.0, 10.0, 6.0, 2.0, 5.0)
+        assert config.taus == Taus(2.0, 1.0, 10.0, 6.0, 2.0, 5.0)
         assert config.weights == Weights(1.0, 0.8, 0.001)
         assert config.delays == Delays(1.0, 2.0, 1.0, 0.0)
         assert config.stale_limit == 5.0
@@ -598,7 +600,7 @@ class TestStepZone:
                 "kitchen": (step.rooms["kitchen"], person[1], CONFIG),
                 "office": (step.rooms["office"], empty[1], CONFIG),
             },
-            3 * MINUTE,
+            CONFIG.taus.person_rise * MINUTE,
         )
         kitchen, office = step.rooms["kitchen"], step.rooms["office"]
         assert kitchen.weight == pytest.approx(1 - math.exp(-1))

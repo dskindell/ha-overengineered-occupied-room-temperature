@@ -151,7 +151,7 @@ def _weight(
 
 
 SETTINGS: Final = (
-    _tau(CONF_TAU_PERSON_RISE, 3.0, zero_allowed=False),
+    _tau(CONF_TAU_PERSON_RISE, 2.0, zero_allowed=False),
     _tau(CONF_TAU_PERSON_FALL, 2.0, zero_allowed=False),
     _tau(CONF_TAU_OCCUPANCY_RISE, 10.0, zero_allowed=False),
     _tau(CONF_TAU_OCCUPANCY_FALL, 6.0, zero_allowed=False),
@@ -162,7 +162,7 @@ SETTINGS: Final = (
     _delay(CONF_DELAY_OCCUPANCY_ENTER, 1.0),
     _delay(CONF_DELAY_OCCUPANCY_EXIT),
     _weight(CONF_W_PERSON, 1.0),
-    _weight(CONF_W_OCCUPIED, 0.5),
+    _weight(CONF_W_OCCUPIED, 0.4),
     _weight(CONF_W_BASE, 0.001, MIN_BASE_WEIGHT, "base_weight_too_small"),
     Setting(
         key=CONF_STALE_LIMIT,
