@@ -254,12 +254,27 @@ class ZoneRuntime:
         return value if math.isfinite(value) else None
 
     @callback
-    def _restore_room(self, room: Room, state: RoomState, unit: str | None) -> None:
-        """Seed a room with saved state; the downtime isn't applied as elapsed time."""
+    def _restore_room(
+        self, room: Room, state: RoomState, unit: str | None, downtime: float
+    ) -> None:
+        """Seed a room with saved state; the downtime isn't applied as elapsed time.
+
+        That includes the stale clock: a saved reading ages only while Home
+        Assistant runs, so after a long outage it bridges until the sensor reports.
+        """
         temperature = state.last_known_temperature
         if temperature is not None:
             temperature = self._in_zone_unit(temperature, unit)
-        room.state = replace(state, last_update=None, last_known_temperature=temperature)
+        dropout_since = state.dropout_since
+        clock = dropout_since if dropout_since is not None else state.last_seen
+        if clock is not None and not state.stale:
+            dropout_since = clock + downtime
+        room.state = replace(
+            state,
+            last_update=None,
+            last_known_temperature=temperature,
+            dropout_since=dropout_since,
+        )
 
     @callback
     def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
@@ -281,6 +296,7 @@ class ZoneRuntime:
         """
         registry = er.async_get(self.hass)
         saved = restore_state.async_get(self.hass).last_states
+        now = dt_util.utcnow().timestamp()
         for area_id, room in self.rooms.items():
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, room_unique_id(self.entry, area_id)
@@ -292,7 +308,9 @@ class ZoneRuntime:
                 continue
             data = stored.extra_data.as_dict()
             if (state := saved_room_state(data)) is not None:
-                self._restore_room(room, state, saved_unit(data))
+                # Home Assistant saves states at shutdown, every 15 minutes and at unload.
+                downtime = max(0.0, now - stored.last_seen.timestamp())
+                self._restore_room(room, state, saved_unit(data), downtime)
                 # While an exit is delayed the people have gone, so show who was there.
                 people = stored.state.attributes.get("people")
                 if state.person_present and isinstance(people, list):
