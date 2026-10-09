@@ -84,7 +84,7 @@ class RoomWeightSensor(_OortSensor, RestoreEntity):
 
     @property
     def extra_restore_state_data(self) -> RoomExtraData:
-        return RoomExtraData(self._room.state, self._runtime.unit)
+        return RoomExtraData(self._room.state)
 
     @callback
     def _async_on_runtime_update(self) -> None:

@@ -182,14 +182,14 @@ def weight(hass: HomeAssistant, entity_id: str) -> float:
 
 
 def restore_room_state(
-    hass: HomeAssistant, *, unit: str = "°C", saved_at: float | None = None, **fields: Any
+    hass: HomeAssistant, *, saved_at: float | None = None, **fields: Any
 ) -> None:
     """Seed Home Assistant's restore store with the kitchen's saved state, written
     the way the integration writes it (RoomState → RoomExtraData), saved at
     ``saved_at`` (a timestamp; now by default)."""
     state = RoomState(**fields)
     mock_restore_cache_with_extra_data(
-        hass, [(State(KITCHEN_WEIGHT, str(state.weight)), RoomExtraData(state, unit).as_dict())]
+        hass, [(State(KITCHEN_WEIGHT, str(state.weight)), RoomExtraData(state).as_dict())]
     )
     if saved_at is not None:
         stored = restore_state.async_get(hass).last_states[KITCHEN_WEIGHT]
@@ -1253,28 +1253,6 @@ async def test_unit_system_change_and_reload_never_double_convert(hass: HomeAssi
     assert float(temperature.state) == pytest.approx(20.5, abs=0.01)
 
 
-async def test_saved_reading_is_converted_if_the_unit_changed_while_down(
-    hass: HomeAssistant,
-) -> None:
-    now = dt_util.utcnow().timestamp()
-    restore_room_state(
-        hass,
-        weight=1.0,
-        target=1.0,
-        tau=3.0,
-        status=Status.PERSON,
-        last_occupied_state=Status.PERSON,
-        last_known_temperature=20.0,
-        last_seen=now,
-        last_update=now,
-    )
-    hass.config.units = US_CUSTOMARY_SYSTEM  # a zone created now works in °F
-    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)  # not back yet
-    entry = await setup_zone(hass, [room("kitchen")])
-    assert entry.runtime_data.unit == "°F"
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(68.0, abs=0.01)
-
-
 # ---------------------------------------------------------------------------
 # First states
 # ---------------------------------------------------------------------------
@@ -1904,24 +1882,6 @@ async def test_kelvin_sensor_is_converted(hass: HomeAssistant) -> None:
     assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
 
 
-async def test_saved_kelvin_reading_is_converted_on_restore(hass: HomeAssistant) -> None:
-    now = dt_util.utcnow().timestamp()
-    restore_room_state(
-        hass,
-        unit="K",
-        weight=1.0,
-        target=1.0,
-        tau=3.0,
-        status=Status.PERSON,
-        last_known_temperature=293.15,
-        last_seen=now,
-        last_update=now,
-    )
-    hass.states.async_set("sensor.kitchen_temperature", STATE_UNAVAILABLE)
-    await setup_zone(hass, [room("kitchen")])
-    assert float(hass.states.get(TEMPERATURE).state) == pytest.approx(20.0, abs=0.05)
-
-
 async def test_enter_delay_ignores_a_short_visit_and_counts_on_time(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -2099,7 +2059,7 @@ async def test_a_delayed_exit_keeps_its_people_after_a_restart(
         [
             (
                 State(KITCHEN_WEIGHT, "1.0", {"people": ["Alex", 7]}),
-                RoomExtraData(state, "°C").as_dict(),
+                RoomExtraData(state).as_dict(),
             )
         ],
     )
