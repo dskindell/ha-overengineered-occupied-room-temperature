@@ -57,6 +57,19 @@ uv pip install --python .venv/bin/python cairosvg
 .venv/bin/python scripts/demo_animation.py          # docs/images/oort-demo.gif
 ```
 
+## Releases
+
+Versions follow [Semantic Versioning](https://semver.org/): fixes raise the patch number, new features or settings the minor number, and changes that break existing setups (a renamed entity or attribute, a removed setting) the major number. A change to what a zone stores comes with a config entry migration.
+
+Every change is released first as a beta, a GitHub pre-release such as `v1.1.0-beta.1`. A beta becomes a stable release (the same commit, tagged `v1.1.0`) once it has run for at least 48 hours on a real installation, including a restart. Changes to the documentation alone aren't released.
+
+To release:
+
+1. In a pull request, set `version` in `manifest.json` (without the `v`) and add a `## [<version>] - <date>` section to `CHANGELOG.md`.
+2. After it merges, check that CI passed on that commit of `main`.
+3. For a stable release, check the beta on the real installation: no OORT errors or warnings in the log, no OORT Repairs issues, and every room's weight carried across the restart.
+4. Tag that commit and push the tag: `git tag v<version> && git push origin v<version>`. The release workflow checks that the tag matches the manifest and is on `main`, then publishes the release with that version's changelog section, as a pre-release when the version has a suffix such as `-beta.1`.
+
 ## Commits
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>[optional scope]: <description>`, for example `fix(zone): end delays on time`. The allowed types are `feat`, `fix`, `perf`, `refactor`, `style`, `docs`, `test`, `ci`, `build`, `chore` and `revert`. Leave out `Co-Authored-By` trailers. The `commit-msg` hook checks each message, and CI checks every commit it's given.
