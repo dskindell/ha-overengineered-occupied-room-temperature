@@ -44,6 +44,7 @@ OORT is that logic rebuilt as a proper integration. A tracked person counts for 
   - [People](#people)
 - [Entities](#entities)
 - [Data updates](#data-updates)
+  - [Recorder and database size](#recorder-and-database-size)
 - [Fallback and stale sensors](#fallback-and-stale-sensors)
 - [Startup grace period](#startup-grace-period)
 - [Known limitations](#known-limitations)
@@ -373,6 +374,21 @@ A recalculation doesn't always write the sensors, which keeps history (and the d
 
 - A **`<Room> weight`** sensor is written straight away when any of its attributes change, such as its status. In between, it's written on the minute timer once its weight has moved at least 0.01 since it was last written, and once more when the weight reaches its target, so a settling weight can show up to 0.01 off until it settles. A new temperature reading on its own doesn't write it. The zone's temperature always uses the exact weights.
 - The **`Temperature`** sensor is written only when its rounded value, `contributing_rooms` or `fallback` changes.
+
+### Recorder and database size
+
+Measured on a nine-room zone in a two-person house: about **4,000 history rows a day** — about 1,300 from the `Temperature` sensor and the rest from the weight sensors, busy rooms writing far more than quiet ones. Home Assistant keeps history for 10 days by default (`purge_keep_days`). Every OORT sensor also gets hourly long-term statistics, which are never purged: about 8 MiB a year for that zone in SQLite.
+
+If you don't need the weights' history, exclude them from the recorder and keep the `Temperature` sensor:
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - sensor.oort_*_weight
+```
+
+Excluded weight sensors keep working, and the zone's temperature still uses them. They lose their history graphs, logbook entries and long-term statistics.
 
 ## Fallback and stale sensors
 
