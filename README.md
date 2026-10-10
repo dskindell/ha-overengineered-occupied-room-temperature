@@ -70,7 +70,7 @@ OORT is that logic rebuilt as a proper integration. A tracked person counts for 
 
 ## Installation
 
-**Status:** OORT is in beta. It has run in my own home since September 2026, and the defaults were tuned on two weeks of that house's data.
+**Status:** 1.0, the first stable release. OORT has run in my own home since September 2026, and the defaults were tuned on two weeks of that house's data.
 
 ### With HACS (recommended)
 
