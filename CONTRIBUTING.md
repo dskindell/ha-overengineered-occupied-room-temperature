@@ -61,7 +61,7 @@ uv pip install --python .venv/bin/python cairosvg
 
 Versions follow [Semantic Versioning](https://semver.org/): fixes raise the patch number, new features or settings the minor number, and changes that break existing setups (a renamed entity or attribute, a removed setting) the major number. A change to what a zone stores comes with a config entry migration.
 
-Every change is released first as a beta, a GitHub pre-release such as `v1.1.0-beta.1`. A beta becomes a stable release (the same commit, tagged `v1.1.0`) once it has run for at least 48 hours on a real installation, including a restart. Changes to the documentation alone aren't released.
+Every change is released first as a beta, a GitHub pre-release such as `v1.1.0-beta.1`. A beta becomes a stable release once it has run for at least 48 hours on a real installation, including a restart; the stable release may differ from its beta only in the version number, the changelog and documentation. Changes to the documentation alone aren't released.
 
 To release:
 

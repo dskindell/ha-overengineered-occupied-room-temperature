@@ -2,9 +2,9 @@
 
 All notable changes to OORT. Versions follow [Semantic Versioning](https://semver.org/); betas are published as GitHub pre-releases, which HACS offers only to those who turn on the repository's pre-release switch.
 
-## [1.0.0-beta.1] - 2026-10-09
+## [1.0.0] - 2026-10-09
 
-First release.
+First stable release, the same code as 1.0.0-beta.1.
 
 ### Added
 
@@ -16,3 +16,7 @@ First release.
 - A plain-average fallback when no room carries weight, a stale-reading limit, room state saved across restarts and outages, and a startup grace period.
 - Renamed source entities are followed automatically; Repairs issues for rooms that can never count as occupied and for entities that don't exist.
 - Default settings tuned on two weeks of recorded data from a real house.
+
+## [1.0.0-beta.1] - 2026-10-09
+
+First beta.
