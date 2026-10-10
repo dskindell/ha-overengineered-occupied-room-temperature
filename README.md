@@ -1,10 +1,16 @@
-# <img src="docs/images/icon.svg" alt="" height="40"> Overengineered Occupied-Room Temperature (OORT)
+# <img src="https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/docs/images/icon.svg" alt="" height="40"> Overengineered Occupied-Room Temperature (OORT)
+
+[![HACS custom repository](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![Release](https://img.shields.io/github/v/release/dskindell/ha-overengineered-occupied-room-temperature?include_prereleases&sort=semver)](https://github.com/dskindell/ha-overengineered-occupied-room-temperature/releases)
+[![CI](https://github.com/dskindell/ha-overengineered-occupied-room-temperature/actions/workflows/ci.yml/badge.svg)](https://github.com/dskindell/ha-overengineered-occupied-room-temperature/actions/workflows/ci.yml)
+[![Minimum Home Assistant version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/hacs.json&query=%24.homeassistant&label=Home%20Assistant&prefix=%E2%89%A5%20)](https://www.home-assistant.io/)
+[![License](https://img.shields.io/github/license/dskindell/ha-overengineered-occupied-room-temperature)](LICENSE)
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration that keeps the rooms you're actually in at your chosen temperature, on a whole-home (single-zone) HVAC system.
 
 OORT watches who and what is in each of your rooms and blends their temperature sensors into one occupancy-weighted number, which you point your thermostat's "current temperature" at instead of a single fixed sensor. It works with any thermostat that can take an external temperature sensor as its input.
 
-![A tracked person moves from the office (69°) through the kitchen and living room to the bedroom (66°). OORT's temperature follows them, while a thermostat on the living-room wall reads 72° throughout.](docs/images/oort-demo.gif)
+![A tracked person moves from the office (69°) through the kitchen and living room to the bedroom (66°). OORT's temperature follows them, while a thermostat on the living-room wall reads 72° throughout.](https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/docs/images/oort-demo.gif)
 
 OORT doesn't talk to any hardware itself. It reads sensors and template results you already have, and produces new sensors for your thermostat to use.
 
@@ -28,6 +34,8 @@ OORT is that logic rebuilt as a proper integration. A tracked person counts for 
 
 - [Is this for me?](#is-this-for-me)
 - [Installation](#installation)
+  - [With HACS](#with-hacs-recommended)
+  - [Manually](#manually)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Pointing your thermostat at OORT](#pointing-your-thermostat-at-oort)
@@ -62,10 +70,30 @@ OORT is that logic rebuilt as a proper integration. A tracked person counts for 
 
 ## Installation
 
-There's no HACS listing yet (planned for later). Install manually:
+**Status:** OORT is in beta. It has run in my own home since September 2026, and the defaults were tuned on two weeks of that house's data.
 
-1. Copy the `custom_components/overengineered_occupied_room_temperature` folder from this repository into your Home Assistant config's `custom_components/` directory, so you end up with `<config>/custom_components/overengineered_occupied_room_temperature/`.
+### With HACS (recommended)
+
+OORT isn't in the HACS default list yet, so add it as a custom repository:
+
+1. Use this button, which opens it in HACS in your own Home Assistant:
+
+   [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dskindell&repository=ha-overengineered-occupied-room-temperature&category=integration)
+
+   Or in HACS, open ⋮ → **Custom repositories**, enter `https://github.com/dskindell/ha-overengineered-occupied-room-temperature` with the type **Integration**, and choose **Add**.
+2. Open **Overengineered Occupied-Room Temperature** in HACS and choose **Download**.
+3. Restart Home Assistant.
+
+HACS installs releases only, and tells you when a new one is out.
+
+**Betas:** new versions are released first as betas, which HACS doesn't offer unless you ask for them. To get them, go to **Settings → Devices & services → Entities**, show disabled entities, and find **Overengineered Occupied-Room Temperature Pre-release** (a HACS switch). Enable it, wait for HACS to reload, then turn it on.
+
+### Manually
+
+1. Download the latest [release](https://github.com/dskindell/ha-overengineered-occupied-room-temperature/releases) and copy its `custom_components/overengineered_occupied_room_temperature` folder into your Home Assistant config's `custom_components/` directory, so you end up with `<config>/custom_components/overengineered_occupied_room_temperature/`.
 2. Restart Home Assistant.
+
+You'll need to repeat this for each new version.
 
 Then follow the [Quick start](#quick-start).
 
@@ -262,15 +290,15 @@ The defaults suit most homes. These charts show what they do, and how a differen
 
 With the default settings, a room's weight rises like this when someone arrives. It starts rising after the enter delay (1 minute by default):
 
-![Weight rising with the default settings: after a 1-minute enter delay, a tracked person takes a room from 0 to 0.63 by minute 3, an occupancy sensor from 0 to 0.25 by minute 11](docs/images/default-rise.svg)
+![Weight rising with the default settings: after a 1-minute enter delay, a tracked person takes a room from 0 to 0.63 by minute 3, an occupancy sensor from 0 to 0.25 by minute 11](https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/docs/images/default-rise.svg)
 
 and falls like this when something changes:
 
-![Weight falling with the default settings: person fall and open in 2 minutes, dropout in 5, occupancy fall in 6](docs/images/default-fall.svg)
+![Weight falling with the default settings: person fall and open in 2 minutes, dropout in 5, occupancy fall in 6](https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/docs/images/default-fall.svg)
 
 Every tau follows the same curve, stretched in time. After one tau the weight has covered 63% of the distance to its new target, after three taus 95%:
 
-![Share of the change completed over time for taus of 1, 3, 5, 10 and 20 minutes](docs/images/tau-comparison.svg)
+![Share of the change completed over time for taus of 1, 3, 5, 10 and 20 minutes](https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/docs/images/tau-comparison.svg)
 
 | Tau | Halfway | 90% | 95% | 99% |
 |---|---|---|---|---|
@@ -282,7 +310,7 @@ Every tau follows the same curve, stretched in time. After one tau the weight ha
 
 What the thermostat sees is each room's **share** of the total weight, so a tau matters most when people move between rooms. In this example a tracked person steps out of the living room into the kitchen for 5 minutes, comes back, and 20 minutes later moves to the kitchen for good. The chart shows the living room's share of the zone temperature for three person fall taus:
 
-![Living room share of the zone temperature during a 5-minute trip to the kitchen and a later move, for person fall taus of 2, 10 and 20 minutes](docs/images/short-trip.svg)
+![Living room share of the zone temperature during a 5-minute trip to the kitchen and a later move, for person fall taus of 2, 10 and 20 minutes](https://raw.githubusercontent.com/dskindell/ha-overengineered-occupied-room-temperature/main/docs/images/short-trip.svg)
 
 - **2 minutes (default):** the zone follows the person closely. The living room's share drops to 10% during the trip, and after the real move it's under 5% within 7 minutes.
 - **10 or 20 minutes:** the living room stays at 42–48% through the trip, so short trips out barely move the temperature. The cost comes after a real move: 10 minutes later the living room still makes up 27% (tau 10) or 38% (tau 20). The kitchen falls just as slowly after the trip, which is why the living room only gets back to 76–89% before the move.
@@ -428,7 +456,7 @@ When Home Assistant itself is starting, OORT holds every room's weight at whatev
 ## Known limitations
 
 - Each zone creates a single device holding all of its room-weight and temperature sensors, rather than one device per room. Room sensors won't appear on their own room's area page in Home Assistant unless you manually assign each `<Room> weight` entity to that area (**Settings → Devices & services → Entities**).
-- No HACS listing yet; manual installation only.
+- Not in the HACS default list yet; add it as a custom repository (see [Installation](#installation)).
 - A room's area can't be changed after the room is created — remove and re-add it instead.
 - When you rename an entity a zone uses (a temperature, occupancy or opening sensor, or a person's location entity), the zone follows the new entity ID by itself and reloads. Entity IDs written inside templates aren't updated — edit those yourself.
 
@@ -444,7 +472,7 @@ When Home Assistant itself is starting, OORT holds every room's weight at whatev
 
 1. Point your thermostat back at its own temperature sensor first, or it will be left without a current temperature.
 2. Go to **Settings → Devices & services → Overengineered Occupied-Room Temperature**. For each zone, open its ⋮ menu and choose **Delete**. This removes the zone's device and sensors.
-3. Delete the `custom_components/overengineered_occupied_room_temperature` folder from your config and restart Home Assistant.
+3. In HACS, open **Overengineered Occupied-Room Temperature**, choose ⋮ → **Remove**, and restart Home Assistant. If you installed it manually, delete the `custom_components/overengineered_occupied_room_temperature` folder from your config instead, then restart.
 
 ## Contributing
 
