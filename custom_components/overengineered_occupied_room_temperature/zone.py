@@ -197,6 +197,14 @@ def room_attributes(room: Room) -> dict[str, Any]:
     }
 
 
+def stored_state(hass: HomeAssistant, entity_id: str) -> restore_state.StoredState | None:
+    """The state Home Assistant saved for ``entity_id`` before this run, if any."""
+    data = restore_state.async_get(hass)
+    if hasattr(data, "async_get_stored_state"):  # Home Assistant 2026.11 and later
+        return data.async_get_stored_state(entity_id)  # type: ignore[no-any-return]
+    return data.last_states.get(entity_id)
+
+
 class ZoneRuntime:
     """Runs one OORT zone: its rooms, people, subscriptions and update loop."""
 
@@ -308,7 +316,6 @@ class ZoneRuntime:
         afresh. Nothing is written here, since no listener is registered yet.
         """
         registry = er.async_get(self.hass)
-        saved = restore_state.async_get(self.hass).last_states
         now = dt_util.utcnow().timestamp()
         for area_id, room in self.rooms.items():
             entity_id = registry.async_get_entity_id(
@@ -316,7 +323,7 @@ class ZoneRuntime:
             )
             if entity_id is None or registry.entities[entity_id].disabled:
                 continue
-            stored = saved.get(entity_id)
+            stored = stored_state(self.hass, entity_id)
             if stored is None or stored.extra_data is None:
                 continue
             data = stored.extra_data.as_dict()
