@@ -28,9 +28,9 @@ jobs:
       - name: Set up Python 3.14 and the newest test dependencies
         run: |
           uv venv --python 3.14 .venv
-          # Unpinned: the newest pytest-homeassistant-custom-component pins the newest
-          # Home Assistant. If it needs a newer Python, this step fails and says so.
-          uv pip install --python .venv/bin/python pytest-homeassistant-custom-component
+          # Unpinned: each pytest-homeassistant release pins the Home Assistant release
+          # of the same version. If it needs a newer Python, this step fails and says so.
+          uv pip install --python .venv/bin/python pytest-homeassistant
           .venv/bin/python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
 
       - name: Tests

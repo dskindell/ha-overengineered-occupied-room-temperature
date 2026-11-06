@@ -10,7 +10,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.helpers import area_registry as ar
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.overengineered_occupied_room_temperature.config_flow import (
     validate_settings,
@@ -46,7 +45,7 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     ZONE_SETTINGS,
     Setting,
 )
-from tests.helpers import stored_settings
+from tests.helpers import MockConfigEntry, stored_settings
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 

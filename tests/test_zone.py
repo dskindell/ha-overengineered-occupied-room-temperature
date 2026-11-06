@@ -22,11 +22,6 @@ from homeassistant.helpers import (
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 import pytest
-from pytest_homeassistant_custom_component.common import (
-    MockConfigEntry,
-    async_fire_time_changed,
-    mock_restore_cache_with_extra_data,
-)
 
 from custom_components.overengineered_occupied_room_temperature.const import (
     CHOICE_ADD,
@@ -65,7 +60,14 @@ from custom_components.overengineered_occupied_room_temperature.zone import (
     room_unique_id,
     stored_state,
 )
-from tests.helpers import NO_DELAYS, SAVED, stored_settings
+from tests.helpers import (
+    NO_DELAYS,
+    SAVED,
+    MockConfigEntry,
+    async_fire_time_changed,
+    mock_restore_cache_with_extra_data,
+    stored_settings,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 

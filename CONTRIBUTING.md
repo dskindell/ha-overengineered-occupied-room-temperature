@@ -2,7 +2,7 @@
 
 ## Set up
 
-The tests run against Home Assistant 2026.9.3 (through `pytest-homeassistant-custom-component`), which needs Python 3.14. With [uv](https://docs.astral.sh/uv/):
+The tests run against Home Assistant 2026.9.3, the oldest version OORT supports, through `pytest-homeassistant-custom-component`; it needs Python 3.14. With [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv venv --python 3.14 .venv
@@ -45,7 +45,7 @@ uv pip install --python .venv/bin/python mypy==2.3.1
 docker run --rm -v "$PWD":/github/workspace ghcr.io/home-assistant/hassfest   # Home Assistant's integration validator
 ```
 
-A second workflow runs the tests against the newest Home Assistant every week.
+A second workflow runs the tests against the newest Home Assistant every week, through Home Assistant's own `pytest-homeassistant` package, which exists for Home Assistant 2026.11 and later. `tests/helpers.py` imports the test helpers from whichever of the two packages is installed; don't install both.
 
 ## README images
 
