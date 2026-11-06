@@ -63,6 +63,7 @@ from custom_components.overengineered_occupied_room_temperature.zone import (
     missing_entities_issue_id,
     repairs_issue_id,
     room_unique_id,
+    stored_state,
 )
 from tests.helpers import NO_DELAYS, SAVED, stored_settings
 
@@ -192,7 +193,7 @@ def restore_room_state(
         hass, [(State(KITCHEN_WEIGHT, str(state.weight)), RoomExtraData(state).as_dict())]
     )
     if saved_at is not None:
-        stored = restore_state.async_get(hass).last_states[KITCHEN_WEIGHT]
+        stored = stored_state(hass, KITCHEN_WEIGHT)
         stored.last_seen = dt_util.utc_from_timestamp(saved_at)
 
 
@@ -1394,7 +1395,11 @@ async def test_re_added_room_starts_at_zero_not_its_old_state(
     )
     await hass.async_block_till_done()
     assert hass.states.get(OFFICE_WEIGHT) is None
-    saved = restore_state.async_get(hass).last_states[OFFICE_WEIGHT]
+    saved = next(
+        stored
+        for stored in restore_state.async_get(hass).async_get_stored_states()
+        if stored.state.entity_id == OFFICE_WEIGHT
+    )
     assert saved.extra_data.as_dict()["weight"] == pytest.approx(0.5, abs=0.01)
 
     hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_ROOMS: all_rooms})
