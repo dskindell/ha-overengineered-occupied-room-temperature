@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+try:  # Home Assistant 2026.11 and later
+    from pytest_homeassistant import common
+except ImportError:
+    from pytest_homeassistant_custom_component import common
+
 from custom_components.overengineered_occupied_room_temperature.const import (
     CONF_DEFAULTS,
     CONF_ZONE_SETTINGS,
@@ -11,6 +16,10 @@ from custom_components.overengineered_occupied_room_temperature.const import (
     ROOM_SETTINGS,
     ZONE_SETTINGS,
 )
+
+MockConfigEntry = common.MockConfigEntry
+async_fire_time_changed = common.async_fire_time_changed
+mock_restore_cache_with_extra_data = common.mock_restore_cache_with_extra_data
 
 # Every delay off, for tests of behaviour that delays would only postpone.
 NO_DELAYS = {key: 0.0 for key in ROOM_SETTINGS if key.startswith("delay_")}
