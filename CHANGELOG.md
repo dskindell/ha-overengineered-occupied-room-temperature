@@ -2,6 +2,14 @@
 
 All notable changes to OORT. Versions follow [Semantic Versioning](https://semver.org/); betas are published as GitHub pre-releases, which HACS offers only to those who turn on the repository's pre-release switch.
 
+## [1.0.1] - 2026-11-06
+
+The same code as 1.0.1-beta.1.
+
+### Fixed
+
+- Zones failed to load on Home Assistant 2026.11.
+
 ## [1.0.1-beta.1] - 2026-11-05
 
 ### Fixed
